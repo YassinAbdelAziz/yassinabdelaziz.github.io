@@ -30,11 +30,15 @@
   .sidebar.collapsed .nav-item.active .nav-icon{background:rgba(255,46,46,0.18);color:var(--accent);}
   .sidebar.collapsed .nav-item:hover .nav-icon{background:rgba(255,255,255,0.07);color:var(--text);}
   .sidebar.collapsed .sidebar-logo{justify-content:center;padding:1.3rem 0 1.1rem;}
-  .sidebar-logo{padding:1.3rem 1rem 1.1rem 1.4rem;font-family:system-ui,-apple-system,sans-serif;font-size:1.2rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--text);border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:8px;}
-  .sidebar-logo-text{white-space:nowrap;transition:opacity 0.2s;overflow:hidden;}
-  .sidebar-logo em{color:var(--accent);font-style:normal;}
+  .sidebar.collapsed .sidebar-toggle{position:relative;left:auto;right:auto;}
+  .sidebar-logo{padding:1.3rem 1rem 1.1rem 1.4rem;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .sidebar-logo-inner{display:flex;align-items:center;gap:10px;overflow:hidden;}
+  .sidebar-logo-icon{width:30px;height:30px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:0.85rem;color:#fff;font-weight:700;}
+  .sidebar-logo-text{white-space:nowrap;transition:opacity 0.2s;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;font-size:1.05rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--text);}
+  .sidebar-logo-text em{color:var(--accent);font-style:normal;}
   .sidebar-toggle{background:none;border:none;color:var(--muted2);cursor:pointer;font-size:0.85rem;padding:0;border-radius:5px;transition:color 0.18s,background 0.18s;flex-shrink:0;width:26px;height:26px;display:flex;align-items:center;justify-content:center;}
   .sidebar-toggle:hover{color:var(--text);background:rgba(255,255,255,0.07);}
+  .sidebar.collapsed .sidebar-logo-icon{margin:0 auto;}
   .sidebar-nav{flex:1;padding:1rem 0;}
   .nav-section-label{font-size:0.58rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);padding:0.8rem 1.6rem 0.4rem;white-space:nowrap;overflow:hidden;transition:opacity 0.2s;}
   .nav-item{display:flex;align-items:center;gap:12px;padding:10px 1.6rem;color:var(--muted2);font-size:0.875rem;font-weight:400;cursor:pointer;transition:color 0.18s,background 0.18s,padding 0.26s;border-left:2px solid transparent;user-select:none;white-space:nowrap;position:relative;}
@@ -45,10 +49,8 @@
   .nav-label{transition:opacity 0.2s;overflow:hidden;}
   .nav-tooltip{position:absolute;left:calc(var(--sidebar-collapsed-w) + 8px);top:50%;transform:translateY(-50%);background:var(--surface3);border:1px solid var(--border);color:var(--text);font-size:0.78rem;padding:5px 12px;border-radius:7px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity 0.15s;z-index:500;}
   .sidebar.collapsed .nav-item:hover .nav-tooltip{opacity:1;}
-  .sidebar-footer{padding:1rem 1.6rem;border-top:1px solid var(--border);font-size:0.65rem;color:var(--muted);letter-spacing:0.06em;flex-shrink:0;white-space:nowrap;overflow:hidden;transition:opacity 0.2s;display:flex;align-items:center;justify-content:space-between;}
+  .sidebar-footer{padding:1rem 1.6rem;border-top:1px solid var(--border);font-size:0.65rem;color:var(--muted);letter-spacing:0.06em;flex-shrink:0;white-space:nowrap;overflow:hidden;transition:opacity 0.2s;}
   .sidebar-footer-text{overflow:hidden;text-overflow:ellipsis;}
-  .shortcut-btn{background:none;border:1px solid var(--border);color:var(--muted2);cursor:pointer;font-size:0.65rem;width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;transition:all 0.18s;flex-shrink:0;font-family:'Inter',sans-serif;font-weight:500;}
-  .shortcut-btn:hover{color:var(--accent);border-color:var(--accent);}
 
   /* MAIN */
   .main{margin-left:var(--sidebar-w);flex:1;min-width:0;display:flex;flex-direction:column;transition:margin-left 0.26s cubic-bezier(0.4,0,0.2,1);}
@@ -70,8 +72,9 @@
   .page{display:none;flex-direction:column;opacity:0;transform:translateY(8px);transition:opacity 0.25s ease,transform 0.25s ease;}
   .page.active{display:flex;opacity:1;transform:translateY(0);}
 
-  /* HERO */
-  .home-hero{padding:6rem 2rem 2rem;max-width:820px;margin:0 auto;text-align:center;display:flex;flex-direction:column;align-items:center;}
+  /* HOME PAGE */
+  #page-home{flex:1;display:flex;flex-direction:column;justify-content:center;min-height:calc(100vh - 52px);}
+  .home-hero{padding:0 2rem;max-width:820px;margin:0 auto;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;min-height:0;}
   .home-hero h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(3.5rem,8vw,6rem);font-weight:400;letter-spacing:0.03em;line-height:0.95;margin-bottom:1rem;text-transform:uppercase;}
   .home-hero h1 .line2{display:block;color:var(--accent);font-size:clamp(4rem,10vw,7.5rem);letter-spacing:0.01em;line-height:0.9;}
   .home-hero p{color:var(--muted2);font-size:0.8rem;font-weight:300;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:1.6rem;}
@@ -273,7 +276,8 @@
     .main{margin-left:0!important;padding-top:52px;}
     .main.has-mob-search{padding-top:100px;}
     .topbar{display:none;}
-    .home-hero{padding:3rem 1rem 1.5rem;text-align:center;}
+    #page-home{min-height:calc(100vh - 52px);}
+    .home-hero{padding:0 1rem;}
     .home-hero h1{font-size:clamp(2.5rem,8vw,4rem);}
     .home-hero h1 .line2{font-size:clamp(3rem,10vw,5rem);}
     .content-section{padding:0 1rem 2rem;}
@@ -331,7 +335,10 @@
 
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-logo">
-    <span class="sidebar-logo-text">Screen<em>ify</em></span>
+    <div class="sidebar-logo-inner">
+      <div class="sidebar-logo-icon">S</div>
+      <span class="sidebar-logo-text">Screen<em>ify</em></span>
+    </div>
     <button class="sidebar-toggle" id="sidebarToggleBtn" onclick="toggleSidebar()" title="Collapse sidebar"><i class="fa-solid fa-chevron-left"></i></button>
   </div>
   <nav class="sidebar-nav">
@@ -352,10 +359,13 @@
     <div class="nav-item" id="nav-watchlist" onclick="switchPage('watchlist')">
       <span class="nav-icon"><i class="fa-solid fa-heart"></i></span><span class="nav-label">Watchlist</span><span class="nav-tooltip">Watchlist</span>
     </div>
+    <div class="nav-section-label" style="margin-top:1rem;">More</div>
+    <div class="nav-item" id="nav-shortcuts" onclick="showShortcutModal()">
+      <span class="nav-icon"><i class="fa-solid fa-keyboard"></i></span><span class="nav-label">Shortcuts</span><span class="nav-tooltip">Keyboard Shortcuts</span>
+    </div>
   </nav>
   <div class="sidebar-footer">
     <span class="sidebar-footer-text">Made with ❤️ by Yassin</span>
-    <button class="shortcut-btn" onclick="showShortcutModal()" title="Keyboard shortcuts">?</button>
   </div>
 </aside>
 
@@ -363,7 +373,7 @@
 
   <!-- HOME -->
   <div class="page active" id="page-home">
-    <div class="home-hero content-section">
+    <div class="home-hero">
       <h1>Watch anything,<span class="line2">right now.</span></h1>
       <p>Pick a section from the sidebar and hit play. That's it.</p>
       <div class="home-search-wrap">
@@ -544,6 +554,9 @@ let sidebarCollapsed=false;
 let mobSearchType=null;
 let nowPlayingEp={season:null,episode:null};
 
+// ============ SANITIZE ============
+function sanitize(str){const div=document.createElement('div');div.textContent=str;return div.innerHTML;}
+
 // ============ SEARCH HISTORY ============
 function getSearchHistory(){try{return JSON.parse(localStorage.getItem('screenify_search_history')||'[]');}catch{return[];}}
 function saveSearchHistory(list){localStorage.setItem('screenify_search_history',JSON.stringify(list));}
@@ -568,7 +581,7 @@ function renderSearchHistory(){
   list.forEach(q=>{
     const tag=document.createElement('span');
     tag.className='search-history-tag';
-    tag.innerHTML=`${q}<span class="hist-x" data-q="${q.replace(/"/g,'&quot;')}">&times;</span>`;
+    tag.innerHTML=sanitize(q)+`<span class="hist-x">&times;</span>`;
     tag.addEventListener('click',()=>{
       document.getElementById('homeSearchInput').value=q;
       doHomeSearch();
@@ -751,7 +764,7 @@ async function doSearch(type){
   const s=state[type];
   const labelEl=document.getElementById(type==='movie'?'movieResultsLabel':'tvResultsLabel');
   if(!q){s.mode='trending';s.query='';s.page=1;labelEl.textContent='Trending this week';return loadPage(type,1);}
-  s.mode='search';s.query=q;s.page=1;labelEl.textContent='"'+q+'"';
+  s.mode='search';s.query=q;s.page=1;labelEl.textContent='"'+sanitize(q)+'"';
   addToSearchHistory(q);
   await loadPage(type,1);
 }
@@ -884,18 +897,18 @@ function makeCard(item,type,opts={}){
   const div=document.createElement('div');
   div.className='card';
   div.innerHTML=`
-    ${poster?`<img src="${poster}" alt="${title}" loading="lazy"/>`:`<div class="card-no-poster">&#127916;</div>`}
+    ${poster?`<img src="${poster}" alt="${sanitize(title)}" loading="lazy"/>`:`<div class="card-no-poster">&#127916;</div>`}
     ${rating?`<div class="card-rating">&#9733; ${rating}</div>`:''}
     ${opts.showWl?`<button class="card-wl-btn ${inWl?'in-list':''}" title="${inWl?'Remove from watchlist':'Add to watchlist'}">${inWl?'&#9829;':'&#9825;'}</button>`:''}
     ${opts.showDelete?`<button class="card-delete-btn" title="Remove">&#10005;</button>`:''}
     ${pct!==null?`<div class="card-progress"><div class="card-progress-fill" style="width:${pct}%"></div></div>`:''}
-    ${resume?`<div class="card-resume">${resume.label}</div>`:''}
+    ${resume?`<div class="card-resume">${sanitize(resume.label)}</div>`:''}
     <div class="card-hover-overlay">
       <div class="hover-rating">${rating?'&#9733; '+rating:''}</div>
       ${tvMeta}
-      ${overview?`<div class="hover-synopsis">${overview}</div>`:''}
+      ${overview?`<div class="hover-synopsis">${sanitize(overview)}</div>`:''}
     </div>
-    <div class="card-info"><div class="card-title">${title}</div><div class="card-year">${year}</div></div>`;
+    <div class="card-info"><div class="card-title">${sanitize(title)}</div><div class="card-year">${year}</div></div>`;
   if(opts.showWl){
     const wlBtn=div.querySelector('.card-wl-btn');
     wlBtn.addEventListener('click',(e)=>{
@@ -914,7 +927,6 @@ function makeCard(item,type,opts={}){
       showRemoveConfirmModal({...item,type});
     });
   }
-  // Fetch TV details for hover
   if(type==='tv'){
     getTVDetails(item.id).then(info=>{
       const metaEl=document.getElementById('tvmeta-'+item.id);
@@ -962,11 +974,11 @@ async function selectItem(item,type,cardEl){
   const overview=item.overview||'';
   document.getElementById('playerBackCtx').textContent=PAGE_LABELS[currentPage]||'';
   document.getElementById('playerMeta').innerHTML=`
-    ${poster?`<img class="player-poster" src="${poster}" alt="${title}"/>`:''}
+    ${poster?`<img class="player-poster" src="${poster}" alt="${sanitize(title)}"/>`:''}
     <div class="player-info">
-      <h2>${title}</h2>
+      <h2>${sanitize(title)}</h2>
       <span class="meta-sub">${year}${rating?` &middot; &#9733; ${rating}`:''}</span>
-      <p class="player-overview" id="playerOverview">${overview||'<span style="opacity:0.35">Loading…</span>'}</p>
+      <p class="player-overview" id="playerOverview">${sanitize(overview)||'<span style="opacity:0.35">Loading…</span>'}</p>
       <button class="wl-btn ${isInWatchlist(item.id)?'in-list':''}" onclick="toggleWatchlistFromPlayer('${type}')">
         <span class="wl-icon"></span> ${isInWatchlist(item.id)?'In Watchlist':'Add to Watchlist'}
       </button>
@@ -1150,14 +1162,14 @@ function showRemoveConfirmModal(item){
   const resumeData=getResume(item.id,item.type);
   let progressNote='';
   if(resumeData&&resumeData.label){
-    if(item.type==='tv'){progressNote=`You were at <strong>${resumeData.label}</strong>.`;}
-    else{progressNote=`You were <strong>${resumeData.label}</strong> in.`;}
+    if(item.type==='tv'){progressNote=`You were at <strong>${sanitize(resumeData.label)}</strong>.`;}
+    else{progressNote=`You were <strong>${sanitize(resumeData.label)}</strong> in.`;}
   }
   backdrop.innerHTML=`
     <div class="cw-modal">
       <div class="cw-modal-icon">🗑️</div>
       <div class="cw-modal-title">Remove from Continue Watching?</div>
-      <div class="cw-modal-body"><strong>${item.title}</strong> will be removed from your list.</div>
+      <div class="cw-modal-body"><strong>${sanitize(item.title)}</strong> will be removed from your list.</div>
       <div class="cw-modal-warning">⚠️ Your watch progress will also be cleared.${progressNote?' '+progressNote:''} Next time you open it, it'll start from the beginning.</div>
       <div class="cw-modal-btns">
         <button class="cw-modal-cancel">Keep it</button>
@@ -1185,14 +1197,14 @@ async function renderContinuePage(){
     const thumbId='cw-thumb-'+item.id;
     let thumbHtml;
     if(item.type==='tv'){thumbHtml=`<div class="cw-thumb-ep-fallback" id="${thumbId}">&#128250;</div>`;}
-    else{const posterUrl=item.poster?IMG_SM+item.poster:null;thumbHtml=posterUrl?`<img class="cw-thumb-poster" src="${posterUrl}" alt="${item.title}" loading="lazy">`:`<div class="cw-thumb-poster-fallback">&#127916;</div>`;}
+    else{const posterUrl=item.poster?IMG_SM+item.poster:null;thumbHtml=posterUrl?`<img class="cw-thumb-poster" src="${posterUrl}" alt="${sanitize(item.title)}" loading="lazy">`:`<div class="cw-thumb-poster-fallback">&#127916;</div>`;}
     const subLabel=`${item.type==='movie'?'Movie':'TV Show'}${item.year?' &middot; '+item.year:''}`;
     const progressHtml=pct!==null?(()=>{
-      const epPart=item.type==='tv'?`${resume.label} &middot; `:'';
-      return`<div class="cw-progress-bar"><div class="cw-progress-fill" style="width:${pct}%"></div></div><div class="cw-progress-label">${epPart}${pct}% &middot; <span class="cw-timestamp">stopped at ${resume.timeLabel}</span></div>`;
+      const epPart=item.type==='tv'?`${sanitize(resume.label)} &middot; `:'';
+      return`<div class="cw-progress-bar"><div class="cw-progress-fill" style="width:${pct}%"></div></div><div class="cw-progress-label">${epPart}${pct}% &middot; <span class="cw-timestamp">stopped at ${sanitize(resume.timeLabel)}</span></div>`;
     })():`<div class="cw-progress-label" style="color:var(--muted);">Not started</div>`;
     const overviewId='cw-overview-'+item.id;
-    row.innerHTML=`${thumbHtml}<div class="cw-info"><div class="cw-title">${item.title}</div><div class="cw-sub">${subLabel}</div><p class="cw-overview" id="${overviewId}"></p>${progressHtml}</div><div class="cw-actions"><button class="cw-resume-btn">&#9654; Resume</button><button class="cw-remove-btn" title="Remove">&#10005;</button></div>`;
+    row.innerHTML=`${thumbHtml}<div class="cw-info"><div class="cw-title">${sanitize(item.title)}</div><div class="cw-sub">${subLabel}</div><p class="cw-overview" id="${overviewId}"></p>${progressHtml}</div><div class="cw-actions"><button class="cw-resume-btn">&#9654; Resume</button><button class="cw-remove-btn" title="Remove">&#10005;</button></div>`;
     row.querySelector('.cw-resume-btn').addEventListener('click',(e)=>{e.stopPropagation();selectItem(item,item.type,null);});
     row.querySelector('.cw-remove-btn').addEventListener('click',(e)=>{e.stopPropagation();showRemoveConfirmModal(item);});
     row.addEventListener('click',()=>{selectItem(item,item.type,null);});
@@ -1302,7 +1314,6 @@ function setupKeyboardShortcuts(){
       case 'f':if(currentPage==='player'){const iframe=document.getElementById('playerFrame');if(document.fullscreenElement){document.exitFullscreen();}else{iframe.requestFullscreen();}}break;
       case 'm':toggleSidebar();break;
       case 'escape':if(currentPage==='player')goBack();break;
-      case '?':showShortcutModal();break;
     }
   });
 }
