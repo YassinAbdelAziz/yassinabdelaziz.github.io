@@ -194,18 +194,7 @@
   .player-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .player-frame-wrap{width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;margin-bottom:1.4rem;border:1px solid var(--border);position:relative;}
   .player-frame-wrap iframe{width:100%;height:100%;border:none;display:block;}
-  .fs-toggle-btn{position:absolute;top:10px;right:10px;z-index:10;width:36px;height:36px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#fff;font-size:0.85rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.18s,border-color 0.18s,opacity 0.18s;opacity:0;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
-  .player-frame-wrap:hover .fs-toggle-btn{opacity:1;}
-  .player-frame-wrap:fullscreen .fs-toggle-btn,.player-frame-wrap:-webkit-full-screen .fs-toggle-btn{opacity:1;top:16px;right:16px;width:44px;height:44px;border-radius:10px;background:rgba(0,0,0,0.7);}
-  .fs-toggle-btn:hover{background:rgba(255,46,46,0.85);border-color:var(--accent);}
-  .fs-toggle-btn .fa-expand,.player-frame-wrap:fullscreen .fs-toggle-btn .fa-expand,.player-frame-wrap:-webkit-full-screen .fs-toggle-btn .fa-expand{display:inline;}
-  .fs-toggle-btn .fa-compress{display:none;}
-  .player-frame-wrap:fullscreen .fs-toggle-btn .fa-expand,.player-frame-wrap:-webkit-full-screen .fs-toggle-btn .fa-expand{display:none;}
-  .player-frame-wrap:fullscreen .fs-toggle-btn .fa-compress,.player-frame-wrap:-webkit-full-screen .fs-toggle-btn .fa-compress{display:inline;}
-  .player-frame-wrap:fullscreen,.player-frame-wrap:-webkit-full-screen{width:100vw;height:100vh;aspect-ratio:auto;border-radius:0;border:none;margin:0;}
-  .player-frame-wrap:fullscreen iframe,.player-frame-wrap:-webkit-full-screen iframe{width:100%;height:100%;}
-  .player-frame-wrap:fullscreen,.player-frame-wrap:-webkit-full-screen{width:100vw;height:100vh;aspect-ratio:auto;border-radius:0;border:none;margin:0;}
-  .player-frame-wrap:fullscreen iframe,.player-frame-wrap:-webkit-full-screen iframe{width:100%;height:100%;}
+  .player-frame-wrap iframe:fullscreen,.player-frame-wrap iframe:-webkit-full-screen{width:100vw;height:100vh;border:none;}
   .state-msg{text-align:center;padding:3rem 1rem;color:var(--muted);font-size:0.85rem;letter-spacing:0.05em;}
   .spinner{width:24px;height:24px;border:1.5px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;margin:0 auto 14px;}
   @keyframes spin{to{transform:rotate(360deg);}}
@@ -343,9 +332,6 @@
     .sidebar-toggle{width:32px;height:32px;display:flex;align-items:center;justify-content:center;}
     .card-wl-btn,.card-delete-btn{width:32px;height:32px;font-size:0.9rem;}
     .mob-menu-btn{width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;background:rgba(255,255,255,0.08);border:1px solid var(--border);border-radius:8px;color:var(--text);}
-    /* Fullscreen toggle button */
-    .player-frame-wrap .fs-toggle-btn{display:none;}
-    .player-frame-wrap:fullscreen .fs-toggle-btn,.player-frame-wrap:-webkit-full-screen .fs-toggle-btn{display:flex;}
   }
 
   /* CLEAR / UTILITY BUTTONS */
@@ -576,10 +562,7 @@
     </div>
     <div class="player-content">
       <div class="player-meta" id="playerMeta"></div>
-      <div class="player-frame-wrap" id="playerFrameWrap">
-        <button class="fs-toggle-btn" id="fsToggleBtn" onclick="toggleFullscreen()" aria-label="Toggle fullscreen">
-          <i class="fa-solid fa-expand"></i><i class="fa-solid fa-compress" style="display:none"></i>
-        </button>
+      <div class="player-frame-wrap">
         <iframe id="playerFrame" src="" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
       </div>
     </div>
@@ -869,19 +852,6 @@ function switchPage(page){
 }
 
 function goBack(){switchPage(previousPage);}
-
-function toggleFullscreen(){
-  const wrap=document.getElementById('playerFrameWrap');
-  if(!wrap)return;
-  const isFs=document.fullscreenElement||document.webkitFullscreenElement;
-  if(isFs){
-    if(document.exitFullscreen){document.exitFullscreen();}
-    else if(document.webkitExitFullscreen){document.webkitExitFullscreen();}
-  }else{
-    if(wrap.requestFullscreen){wrap.requestFullscreen();}
-    else if(wrap.webkitRequestFullscreen){wrap.webkitRequestFullscreen();}
-  }
-}
 
 function mobDoSearch(){
   if(!mobSearchType)return;
@@ -1518,15 +1488,14 @@ function setupKeyboardShortcuts(){
     if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
     switch(e.key.toLowerCase()){
       case 'f':if(currentPage==='player'){
-        const wrap=document.querySelector('.player-frame-wrap');
-        if(!wrap)return;
-        if(document.fullscreenElement||document.webkitFullscreenElement){
+        const iframe=document.getElementById('playerFrame');
+        if(!iframe)return;
+        if(document.fullscreenElement){
           if(document.exitFullscreen){document.exitFullscreen();}
           else if(document.webkitExitFullscreen){document.webkitExitFullscreen();}
         }else{
-          const el=wrap;
-          if(el.requestFullscreen){el.requestFullscreen();}
-          else if(el.webkitRequestFullscreen){el.webkitRequestFullscreen();}
+          if(iframe.requestFullscreen){iframe.requestFullscreen();}
+          else if(iframe.webkitRequestFullscreen){iframe.webkitRequestFullscreen();}
         }
       }break;
       case 'm':toggleSidebar();break;
