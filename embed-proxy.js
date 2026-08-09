@@ -56,11 +56,7 @@ export default {
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === '/embed') return handleEmbed(request, url);
-    const host = cookieValue(request, 'vhost');
-    if (!host || !ALLOWED_HOSTS.has(host)) {
-      return new Response('Forbidden', { status: 403, headers: { 'Content-Type': 'text/plain' } });
-    }
-    return proxyFetch(request, host);
+    return proxyByBase(request, url);
   },
 };
 async function handleEmbed(request, url) {
@@ -101,22 +97,32 @@ async function handleEmbed(request, url) {
   }
 
   let html = await upstream.text();
-  html = injectBlocker(html); // relative asset URLs stay relative -> resolve to OUR origin
+  // Inject a <base> so every relative URL (assets + runtime API calls) resolves to
+  // this worker's <host>/ path (no cookie needed — cookies are blocked in cross-site
+  // iframes by SameSite / third-party-cookie blocking).
+  html = injectHead(html, url.origin, target.hostname);
 
-  const headers = new Headers({
+  const headers = {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     'Frame-Options': 'ALLOWALL',
-  });
-  headers.set('Set-Cookie', `vhost=${target.hostname}; Path=/; SameSite=Lax; HttpOnly`);
+  };
   return new Response(html, { status: 200, headers });
 }
-// Forward any same-origin subresource / API request to the upstream host.
-async function proxyFetch(request, host) {
-  const url = new URL(request.url);
-  const upstreamUrl = 'https://' + host + url.pathname + url.search;
+// Route a request whose URL carries the upstream host as its first path segment
+// (thanks to the injected <base>): /<host>/<rest> -> https://<host>/<rest>.
+function proxyByBase(request, url) {
+  const segs = url.pathname.split('/');
+  const host = segs[1];
+  if (!host || !ALLOWED_HOSTS.has(host)) return text('Forbidden', 403);
+  const rest = '/' + segs.slice(2).join('/');
+  return proxyFetch(request, host, 'https://' + host + rest + url.search);
+}
+
+// Forward a same-origin subresource / API request to the upstream host.
+async function proxyFetch(request, host, upstreamUrl) {
 
   const hdrs = new Headers();
   const skip = new Set([
@@ -157,18 +163,6 @@ async function proxyFetch(request, host) {
   return new Response(upstream.body, { status: upstream.status, headers: out });
 }
 
-function cookieValue(request, name) {
-  const raw = request.headers.get('cookie');
-  if (!raw) return null;
-  for (const part of raw.split(';')) {
-    const i = part.indexOf('=');
-    if (i > 0 && part.slice(0, i).trim() === name) {
-      try { return decodeURIComponent(part.slice(i + 1).trim()); } catch { return null; }
-    }
-  }
-  return null;
-}
-
 function text(body, status) {
   return new Response(String(body), { status, headers: { 'Content-Type': 'text/plain' } });
 }
@@ -185,13 +179,12 @@ function stripForEmbed(headers) {
   return out;
 }
 
-function injectBlocker(html) {
-  for (const tag of ['<head', '<body']) {
-    const idx = html.toLowerCase().indexOf(tag);
-    if (idx !== -1) {
-      const after = html.indexOf('>', idx) + 1;
-      return html.slice(0, after) + BLOCKER_SCRIPT + html.slice(after);
-    }
+function injectHead(html, selfOrigin, host) {
+  const base = `<base href="${selfOrigin}/${host}/">`;
+  const idx = html.toLowerCase().search(/<head[^>]*>/);
+  if (idx !== -1) {
+    const after = html.indexOf('>', idx) + 1;
+    return html.slice(0, after) + base + BLOCKER_SCRIPT + html.slice(after);
   }
-  return BLOCKER_SCRIPT + html;
+  return base + BLOCKER_SCRIPT + html;
 }
