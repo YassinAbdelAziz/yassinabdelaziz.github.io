@@ -14,9 +14,19 @@
  *   upstream host server-side, spoofing Origin/Referer so the host's API accepts it.
  * - It also injects a script that kills every popup / pop-under / target=_blank.
  *
+ * URL rewriting strategy — the <base> tag only fixes *relative* URLs; absolute-
+ * path URLs (e.g. href="/assets/x.js") resolve against the origin and bypass the
+ * host prefix, causing 403s.  We fix them in three layers:
+ *  1. HTML source: rewrite href="/..." and src="/..." (and poster) to
+ *     href="/<host>/..." before serving, so proxyByBase routes them correctly.
+ *  2. CSS source: rewrite url(/...) inside proxied stylesheets the same way.
+ *  3. JS runtime: inject a tiny script that overrides fetch()/XHR() so absolute-
+ *     path URLs built at runtime (e.g. fetch('/api/x')) also get the host prefix.
+ *
  * Routes:
  *   /embed?url=<urlencoded embed URL>   -> fetch + inject + serve the page
- *   everything else                     -> forward to the host set in the vhost cookie
+ *   /<host>/<rest>                       -> proxy <rest> to https://<host>/<rest>
+ *   (anything else returns 403 — only known hosts are proxied)
  *
  * Deploy: ES-module Cloudflare Worker, route /embed + a catch-all. EMBED_PROXY in
  * index.html must point at <worker>/embed.
@@ -160,6 +170,17 @@ async function proxyFetch(request, host, upstreamUrl) {
     if (!drop.has(k.toLowerCase())) out.set(k, v);
   }
   out.set('Cache-Control', 'no-store');
+
+  // Rewrite absolute-path url() references in CSS so they route through
+  // proxyByBase instead of 403'ing (the <base> tag only fixes relative URLs).
+  const ctype = upstream.headers.get('content-type') || '';
+  if (ctype.includes('text/css')) {
+    const css = await upstream.text();
+    const rewritten = css.replace(/url\(\s*(["']?)\/(?!\/)/g, 'url($1/' + host + '/');
+    out.set('Content-Type', 'text/css; charset=utf-8');
+    return new Response(rewritten, { status: upstream.status, headers: out });
+  }
+
   return new Response(upstream.body, { status: upstream.status, headers: out });
 }
 
@@ -179,12 +200,35 @@ function stripForEmbed(headers) {
   return out;
 }
 
+// Rewrite absolute-path URLs (/foo) in HTML to host-prefixed paths (/<host>/foo).
+// The injected <base> tag only affects *relative* URLs; absolute-path URLs
+// (starting with /) resolve against the origin only, bypassing the host prefix
+// in proxyByBase, so they would 403.  This rewrite fixes href/src/poster
+// attributes and url() calls in inline CSS.
+function rewriteAbsolutePaths(html, host) {
+  const prefix = '/' + host;
+  return html
+    .replace(/(href|src|poster)\s*=\s*(["'])\/(?!\/)/g, '$1=$2' + prefix + '/')
+    .replace(/url\(\s*(["']?)\/(?!\/)/g, 'url($1' + prefix + '/');
+}
+
+// Build a runtime URL-patching script that redirects absolute-path URLs built
+// in JavaScript (e.g. fetch('/api/x')) through this worker's proxy path.
+// The <base> tag and HTML/CSS rewriting only fix pre-rendered URLs.
+function buildUrlFixer(host) {
+  return `<script>\n(function () {\n  var pf = '/${host}/';\n  function fix(u) {\n    return (typeof u === 'string' && u.charAt(0) === '/' && u.charAt(1) !== '/' && u !== '/') ? pf + u : u;\n  }\n  if (window.fetch) { var f = window.fetch; window.fetch = function (u, o) { return f.call(this, fix(u), o); }; }\n  if (window.XMLHttpRequest) { var X = window.XMLHttpRequest.prototype; var op = X.open; X.open = function (m, u) { var a = [m, fix(u)]; if (arguments[2] !== undefined) a.push(arguments[2]); if (arguments[3] !== undefined) a.push(arguments[3]); return op.apply(this, a); }; }\n})();\n</script>`;
+}
+
 function injectHead(html, selfOrigin, host) {
+  // Rewrite absolute-path URLs in the HTML/CSS source so they route through
+  // proxyByBase instead of 403'ing (the <base> tag only fixes relative URLs).
+  html = rewriteAbsolutePaths(html, host);
+
   const base = `<base href="${selfOrigin}/${host}/">`;
   const idx = html.toLowerCase().search(/<head[^>]*>/);
   if (idx !== -1) {
     const after = html.indexOf('>', idx) + 1;
-    return html.slice(0, after) + base + BLOCKER_SCRIPT + html.slice(after);
+    return html.slice(0, after) + base + BLOCKER_SCRIPT + buildUrlFixer(host) + html.slice(after);
   }
-  return base + BLOCKER_SCRIPT + html;
+  return base + BLOCKER_SCRIPT + buildUrlFixer(host) + html;
 }
