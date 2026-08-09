@@ -81,16 +81,30 @@ export default {
       return new Response('Forbidden host', { status: 403, headers: { 'Content-Type': 'text/plain' } });
     }
 
-    const upstream = await fetch(target.toString(), {
-      redirect: 'follow',
-      headers: {
-        'User-Agent': request.headers.get('User-Agent') ||
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': request.headers.get('Accept-Language') || 'en-US,en;q=0.9',
-      },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
+    let upstream;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+      try {
+        upstream = await fetch(target.toString(), {
+          redirect: 'follow',
+          headers: {
+            'User-Agent': request.headers.get('User-Agent') ||
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': request.headers.get('Accept-Language') || 'en-US,en;q=0.9',
+          },
+          signal: ctrl.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (err) {
+      return new Response('Upstream fetch failed: ' + (err && err.message), {
+        status: 502,
+        headers: { 'Content-Type': 'text/plain' },
+      });
+    }
 
     const ctype = upstream.headers.get('content-type') || '';
     if (!upstream.ok || !ctype.includes('text/html')) {

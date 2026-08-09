@@ -587,7 +587,7 @@ const ACCENT='ff2e2e';
 // Cloudflare Worker proxy that serves the embed pages and neutralizes all popups.
 // Deploy embed-proxy.js (see repo root) on your worker, route /embed.
 // Set EMBED_PROXY='' to bypass the proxy and load embeds directly (no popup blocking).
-const EMBED_PROXY='https://screenify-worker.yassinmovies.workers.dev/embed';
+const EMBED_PROXY='https://screenify-embed.yassinmovies.workers.dev/embed';
 const SERVERS={
   vidking:{name:'Vidking',movie:(id)=>`https://www.vidking.net/embed/movie/${id}`,tv:(id,s,e)=>`https://www.vidking.net/embed/tv/${id}/${s}/${e}`},
   videasy:{name:'Videasy',movie:(id)=>`https://player.videasy.net/movie/${id}`,tv:(id,s,e)=>`https://player.videasy.net/tv/${id}/${s}/${e}`}
