@@ -554,7 +554,7 @@
     <div class="player-content">
       <div class="player-meta" id="playerMeta"></div>
       <div class="player-frame-wrap">
-        <iframe id="playerFrame" src="" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-presentation"></iframe>
+        <iframe id="playerFrame" src="" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
       </div>
     </div>
     <div class="more-like-this" id="moreLikeThisSection" style="display:none;">
@@ -584,6 +584,10 @@ const IMG='https://image.tmdb.org/t/p/w780';
 const IMG_SM='https://image.tmdb.org/t/p/w500';
 const IMG_ORIG='https://image.tmdb.org/t/p/original';
 const ACCENT='ff2e2e';
+// Cloudflare Worker proxy that serves the embed pages and neutralizes all popups.
+// Deploy embed-proxy.js (see repo root) on your worker, route /embed.
+// Set EMBED_PROXY='' to bypass the proxy and load embeds directly (no popup blocking).
+const EMBED_PROXY='https://screenify-worker.yassinmovies.workers.dev/embed';
 const SERVERS={
   vidking:{name:'Vidking',movie:(id)=>`https://www.vidking.net/embed/movie/${id}`,tv:(id,s,e)=>`https://www.vidking.net/embed/tv/${id}/${s}/${e}`},
   videasy:{name:'Videasy',movie:(id)=>`https://player.videasy.net/movie/${id}`,tv:(id,s,e)=>`https://player.videasy.net/tv/${id}/${s}/${e}`}
@@ -608,8 +612,10 @@ let nowPlayingEp={season:null,episode:null};
 function sanitize(str){const div=document.createElement('div');div.textContent=str;return div.innerHTML;}
 
 // ============ SECURITY HELPERS ============
-// Only trust postMessage events coming from the exact embed hosts we embed.
-const ALLOWED_PLAYER_ORIGINS=new Set(['https://www.vidking.net','https://player.videasy.net']);
+// Only trust postMessage events from the exact embed hosts we embed, or from
+// our own embed proxy (which is where the player now runs when EMBED_PROXY is set).
+const EMBED_PROXY_ORIGIN=EMBED_PROXY?new URL(EMBED_PROXY).origin:null;
+const ALLOWED_PLAYER_ORIGINS=new Set([EMBED_PROXY_ORIGIN,'https://www.vidking.net','https://player.videasy.net'].filter(Boolean));
 function isFiniteNum(n){return typeof n==='number'&&Number.isFinite(n)&&!isNaN(n);}
 function clampInt(v,min,max,fallback){
   if(v==null||v==='')return fallback;
@@ -1254,7 +1260,8 @@ function buildEmbedUrl(item,type,serverKey,forceTs){
     if(type==='tv'){params.push('nextEpisode=true');params.push('episodeSelector=true');}
     url+='?'+params.join('&');
   }
-  return url;
+  // Route through the worker proxy (popup blocking + embedding), or fall back to direct.
+  return EMBED_PROXY?`${EMBED_PROXY}?url=${encodeURIComponent(url)}`:url;
 }
 
 function toggleWatchlistFromPlayer(type){
