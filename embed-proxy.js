@@ -1,46 +1,36 @@
 /**
- * embed-proxy.js — Cloudflare Worker "embed proxy"
+ * screenify-embed — full reverse proxy for third-party video embeds.
  *
- * Why: third-party video-embed hosts (vidking.net, player.videasy.net) detect the
- * iframe `sandbox` attribute and refuse to play. This worker proxies the embed
- * through our own origin with NO sandbox (so embeds behave / don't detect sandbox)
- * while injecting a script that makes every popup / pop-under / target=_blank dead.
+ * Why this exists and how it works:
+ * - Embed hosts (vidking.net, player.videasy.net) detect the iframe `sandbox`
+ *   attribute and refuse to play, so we do NOT use a sandbox.
+ * - Simply proxying the embed HTML and rewriting its asset URLs to point at the
+ *   original host broke playback: the page is a React SPA that loads its app JS
+ *   via ES modules, and ES modules loaded cross-origin require CORS, which the
+ *   host does not grant -> black screen.
+ * - So this worker is a FULL reverse proxy: it serves the embed page from our own
+ *   origin, leaves relative URLs pointing at OUR origin, and forwards every
+ *   subresource / API request (same-origin from the browser's perspective) to the
+ *   upstream host server-side, spoofing Origin/Referer so the host's API accepts it.
+ * - It also injects a script that kills every popup / pop-under / target=_blank.
  *
- * Flow:
- *   1) index.html points its <iframe> at: /embed?url=<urlencoded original embed>
- *   2) This worker fetches that page server-side.
- *   3) Rewrites relative asset URLs -> absolute, strips any incoming CSP (so our
- *      injected script can run), and injects a popup-blocker <script> on top.
- *   4) Serves the modified HTML to the (now sandbox-free) iframe.
+ * Routes:
+ *   /embed?url=<urlencoded embed URL>   -> fetch + inject + serve the page
+ *   everything else                     -> forward to the host set in the vhost cookie
  *
- * Deploy: ES-module Cloudflare Worker, route /embed. Point EMBED_PROXY in
- * index.html at it. Set EMBED_PROXY='' to fall back to a direct, sandbox-free
- * (still popup-prone) embed.
- *
- * IMPORTANT DEPLOYMENT WARNING:
- * This file ONLY implements the /embed route. Do NOT wholesale-replace your
- * existing worker with this file if that worker also proxies TMDB (screenify-worker
- * serves /api/tmdb). Instead either:
- *   (a) add this /embed handler into your existing worker source, OR
- *   (b) deploy this as a SEPARATE worker and update EMBED_PROXY in index.html to
- *       that worker's /embed URL (e.g. https://your-new-worker.workers.dev/embed).
- *
- * Notes:
- * - Only the top-level HTML is proxied. Video <video src> / absolute URLs stream
- *   straight from the CDN, so normal playback + Range requests are unaffected.
- * - If an embed resolves its stream via a same-origin XHR on the player host, the
- *   proxy makes that XHR cross-origin and it could fail. Most of these players
- *   resolve the source server-side (hence autoPlay/nextEpisode/episodeSelector),
- *   so this is usually not an issue.
+ * Deploy: ES-module Cloudflare Worker, route /embed + a catch-all. EMBED_PROXY in
+ * index.html must point at <worker>/embed.
  */
 
 const ALLOWED_HOSTS = new Set(['www.vidking.net', 'player.videasy.net']);
 const TIMEOUT_MS = 20000;
+const DEFAULT_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+
 // Injected at the top of every proxied page, before any site script runs.
 const BLOCKER_SCRIPT = `<script>
 (function () {
   function noop() {}
-  // Fake, already-closed window returned by window.open so nothing new opens.
   function blankWindow() {
     return { closed: true, close: noop, focus: noop, blur: noop, stop: noop,
              postMessage: noop, document: null, location: { href: 'about:blank' } };
@@ -54,7 +44,6 @@ const BLOCKER_SCRIPT = `<script>
     try { window.open = function () { return blankWindow(); }; } catch (_) {}
   }
   try { window.showModalDialog = function () { return null; }; } catch (e) {}
-  // Kill <a target="_blank"> / <area target="_blank"> "new tab" popups.
   document.addEventListener('click', function (e) {
     var a = e.target && e.target.closest
       ? e.target.closest('a[target="_blank"], area[target="_blank"]') : null;
@@ -66,77 +55,127 @@ const BLOCKER_SCRIPT = `<script>
 export default {
   async fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname !== '/embed') {
-      return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } });
+    if (url.pathname === '/embed') return handleEmbed(request, url);
+    const host = cookieValue(request, 'vhost');
+    if (!host || !ALLOWED_HOSTS.has(host)) {
+      return new Response('Forbidden', { status: 403, headers: { 'Content-Type': 'text/plain' } });
     }
-
-    const raw = url.searchParams.get('url') || '';
-    let target;
-    try { target = new URL(raw); } catch {
-      return new Response('Bad url', { status: 400, headers: { 'Content-Type': 'text/plain' } });
-    }
-
-    // Open-proxy protection: https only + exact host allowlist.
-    if (target.protocol !== 'https:' || !ALLOWED_HOSTS.has(target.hostname)) {
-      return new Response('Forbidden host', { status: 403, headers: { 'Content-Type': 'text/plain' } });
-    }
-
-    let upstream;
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-      try {
-        upstream = await fetch(target.toString(), {
-          redirect: 'follow',
-          headers: {
-            'User-Agent': request.headers.get('User-Agent') ||
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': request.headers.get('Accept-Language') || 'en-US,en;q=0.9',
-          },
-          signal: ctrl.signal,
-        });
-      } finally {
-        clearTimeout(timer);
-      }
-    } catch (err) {
-      return new Response('Upstream fetch failed: ' + (err && err.message), {
-        status: 502,
-        headers: { 'Content-Type': 'text/plain' },
-      });
-    }
-
-    const ctype = upstream.headers.get('content-type') || '';
-    if (!upstream.ok || !ctype.includes('text/html')) {
-      // Upstream error or non-HTML — pass it through untouched.
-      return new Response(upstream.body, {
-        status: upstream.status,
-        headers: stripForEmbed(upstream.headers),
-      });
-    }
-
-    let html = await upstream.text();
-    html = rewriteRelativeUrls(html, target.toString());
-    html = injectBlocker(html);
-
-    const headers = new Headers({
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer',
-      'Frame-Options': 'ALLOWALL',
-    });
-    return new Response(html, { status: 200, headers });
+    return proxyFetch(request, host);
   },
 };
-// Copy upstream headers but drop anything that would block our injected script or
-// that leaks cross-origin intent back to the embed.
+async function handleEmbed(request, url) {
+  const raw = url.searchParams.get('url') || '';
+  let target;
+  try { target = new URL(raw); } catch { return text('Bad url', 400); }
+  if (target.protocol !== 'https:' || !ALLOWED_HOSTS.has(target.hostname)) {
+    return text('Forbidden host', 403);
+  }
+
+  let upstream;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    try {
+      upstream = await fetch(target.toString(), {
+        redirect: 'follow',
+        headers: {
+          'User-Agent': DEFAULT_UA,
+          'Accept': 'text/html,application/xhtml+xml,application/xml,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    return text('Upstream fetch failed: ' + (err && err.message), 502);
+  }
+
+  const ctype = upstream.headers.get('content-type') || '';
+  if (!upstream.ok || !ctype.includes('text/html')) {
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: stripForEmbed(upstream.headers),
+    });
+  }
+
+  let html = await upstream.text();
+  html = injectBlocker(html); // relative asset URLs stay relative -> resolve to OUR origin
+
+  const headers = new Headers({
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'Frame-Options': 'ALLOWALL',
+  });
+  headers.set('Set-Cookie', `vhost=${target.hostname}; Path=/; SameSite=Lax; HttpOnly`);
+  return new Response(html, { status: 200, headers });
+}
+// Forward any same-origin subresource / API request to the upstream host.
+async function proxyFetch(request, host) {
+  const url = new URL(request.url);
+  const upstreamUrl = 'https://' + host + url.pathname + url.search;
+
+  const hdrs = new Headers();
+  const skip = new Set([
+    'host','cookie','origin','referer','content-length','content-type',
+    'connection','keep-alive','transfer-encoding','upgrade','accept-encoding',
+    'sec-fetch-site','sec-fetch-mode','sec-fetch-dest','sec-fetch-user','te',
+  ]);
+  for (const [k, v] of request.headers) {
+    if (!skip.has(k.toLowerCase())) hdrs.set(k, v);
+  }
+  // Impersonate the native player page so the host's API accepts the request.
+  hdrs.set('Origin', 'https://' + host);
+  hdrs.set('Referer', `https://${host}/`);
+  hdrs.set('User-Agent', request.headers.get('User-Agent') || DEFAULT_UA);
+
+  const init = { method: request.method, headers: hdrs, redirect: 'follow' };
+  if (request.method !== 'GET' && request.method !== 'HEAD') init.body = request.body;
+
+  let upstream;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    try {
+      upstream = await fetch(upstreamUrl, init);
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    return text('Proxy error: ' + (err && err.message), 502);
+  }
+
+  const out = new Headers();
+  const drop = new Set(['content-encoding','content-length','transfer-encoding','connection','keep-alive']);
+  for (const [k, v] of upstream.headers) {
+    if (!drop.has(k.toLowerCase())) out.set(k, v);
+  }
+  out.set('Cache-Control', 'no-store');
+  return new Response(upstream.body, { status: upstream.status, headers: out });
+}
+
+function cookieValue(request, name) {
+  const raw = request.headers.get('cookie');
+  if (!raw) return null;
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) {
+      try { return decodeURIComponent(part.slice(i + 1).trim()); } catch { return null; }
+    }
+  }
+  return null;
+}
+
+function text(body, status) {
+  return new Response(String(body), { status, headers: { 'Content-Type': 'text/plain' } });
+}
+
 function stripForEmbed(headers) {
   const out = new Headers();
-  const drop = new Set([
-    'content-security-policy', 'content-security-policy-report-only',
-    'x-content-security-policy', 'x-webkit-csp',
-  ]);
+  const drop = new Set(['content-security-policy','content-security-policy-report-only','x-content-security-policy','x-webkit-csp']);
   for (const [k, v] of headers) {
     if (!drop.has(k.toLowerCase())) out.set(k, v);
   }
@@ -146,10 +185,8 @@ function stripForEmbed(headers) {
   return out;
 }
 
-// Put our script before any real content so it runs first.
 function injectBlocker(html) {
-  const tags = ['<head', '<body'];
-  for (const tag of tags) {
+  for (const tag of ['<head', '<body']) {
     const idx = html.toLowerCase().indexOf(tag);
     if (idx !== -1) {
       const after = html.indexOf('>', idx) + 1;
@@ -157,39 +194,4 @@ function injectBlocker(html) {
     }
   }
   return BLOCKER_SCRIPT + html;
-}
-
-// Rewrite relative resource URLs (src/href/srcset/poster + CSS url()) to absolute
-// against the original embed page, so assets keep loading even though we serve the
-// HTML from a different origin. Absolute/canonical URLs are left alone.
-const ABSOLUTE_RE = /^\s*(?:https?:)?\/\//i;
-const SKIP_RE = /^\s*(?:data:|javascript:|blob:|about:|mailto:|tel:|#)/i;
-
-function rewriteRelativeUrls(html, base) {
-  const fix = (v) => {
-    const t = (v || '').trim();
-    if (!t || ABSOLUTE_RE.test(t) || SKIP_RE.test(t)) return v;
-    try { return new URL(t, base).href; } catch { return v; }
-  };
-
-  let out = html;
-  const attrRe = /\s(?:src|href|poster|data-src|data-href)="([^"]*)"/gi;
-  out = out.replace(attrRe, (m, val) => m.replace(val, fix(val)));
-  const attrSqRe = /\s(?:src|href|poster|data-src|data-href)='([^']*)'/gi;
-  out = out.replace(attrSqRe, (m, val) => m.replace(val, fix(val)));
-
-  out = out.replace(/srcset="([^"]*)"/gi, (m, list) =>
-    'srcset="' + list.split(',').map((p) => {
-      const parts = p.trim().split(/\s+/);
-      try { parts[0] = new URL(parts[0], base).href; } catch {}
-      return parts.join(' ');
-    }).join(',') + '"');
-
-  out = out.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (m, q, u) => {
-    const t = u.trim();
-    if (ABSOLUTE_RE.test(t) || SKIP_RE.test(t)) return m;
-    try { return 'url(' + q + new URL(t, base).href + q + ')'; } catch { return m; }
-  });
-
-  return out;
 }
