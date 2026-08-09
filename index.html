@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="description" content="Screenify — stream movies and TV shows. Search titles, build a watchlist and pick up right where you left off." />
 <meta name="theme-color" content="#0f0f0f" />
 <meta name="referrer" content="no-referrer" />
@@ -175,7 +175,7 @@
   .shortcut-modal-close{display:block;margin:1rem auto 0;background:var(--accent);border:none;color:#fff;padding:7px 24px;border-radius:7px;font-family:'Inter',sans-serif;font-size:0.75rem;font-weight:500;cursor:pointer;letter-spacing:0.04em;transition:background 0.18s;}
   .shortcut-modal-close:hover{background:var(--accent-lt);}
 
-  .player-topbar{position:sticky;top:0;z-index:200;background:rgba(12,12,12,0.95);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:0.8rem 2rem;display:flex;align-items:center;gap:16px;}
+  .player-topbar{position:sticky;top:0;z-index:200;background:rgba(12,12,12,0.95);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:0.8rem 2rem;padding:max(0.8rem,env(safe-area-inset-top)) 2rem;display:flex;align-items:center;gap:16px;}
   .player-back-btn{display:inline-flex;align-items:center;gap:8px;background:none;border:1px solid var(--border);color:var(--muted2);font-family:'Inter',sans-serif;font-size:0.8rem;font-weight:500;letter-spacing:0.04em;padding:7px 16px;border-radius:8px;cursor:pointer;transition:all 0.18s;flex-shrink:0;}
   .player-back-btn:hover{border-color:rgba(255,255,255,0.2);color:var(--text);}
   .player-back-ctx{font-size:0.72rem;color:var(--muted);letter-spacing:0.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -186,13 +186,26 @@
   .player-info h2{font-family:system-ui,-apple-system,sans-serif;font-size:1.4rem;font-weight:600;letter-spacing:-0.01em;line-height:1.2;width:100%;}
   .meta-sub{font-size:0.72rem;color:var(--muted2);letter-spacing:0.07em;text-transform:uppercase;}
   .player-overview{font-size:0.83rem;color:var(--muted2);line-height:1.7;max-width:680px;width:100%;margin-top:4px;font-weight:300;}
-  .wl-btn{display:inline-flex;align-items:center;gap:7px;padding:8px 20px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--muted2);font-family:'Inter',sans-serif;font-size:0.8rem;letter-spacing:0.04em;cursor:pointer;transition:all 0.2s;}
+  .wl-btn{display:inline-flex;align-items:center;gap:7px;padding:8px 20px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--muted2);font-family:'Inter',sans-serif;font-size:0.8rem;letter-spacing:0.04em;cursor:pointer;transition:all 0.2s;min-height:40px;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
   .wl-btn:hover{border-color:var(--accent);color:var(--accent);}
   .wl-btn.in-list{border-color:var(--accent);color:var(--accent);background:rgba(255,46,46,0.08);}
   .wl-btn.in-list .wl-icon::before{content:'♥';}
   .wl-btn:not(.in-list) .wl-icon::before{content:'♡';}
+  .player-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .player-frame-wrap{width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;margin-bottom:1.4rem;border:1px solid var(--border);position:relative;}
   .player-frame-wrap iframe{width:100%;height:100%;border:none;display:block;}
+  .fs-toggle-btn{position:absolute;top:10px;right:10px;z-index:10;width:36px;height:36px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#fff;font-size:0.85rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.18s,border-color 0.18s,opacity 0.18s;opacity:0;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+  .player-frame-wrap:hover .fs-toggle-btn{opacity:1;}
+  .player-frame-wrap:fullscreen .fs-toggle-btn,.player-frame-wrap:-webkit-full-screen .fs-toggle-btn{opacity:1;top:16px;right:16px;width:44px;height:44px;border-radius:10px;background:rgba(0,0,0,0.7);}
+  .fs-toggle-btn:hover{background:rgba(255,46,46,0.85);border-color:var(--accent);}
+  .fs-toggle-btn .fa-expand,.player-frame-wrap:fullscreen .fs-toggle-btn .fa-expand,.player-frame-wrap:-webkit-full-screen .fs-toggle-btn .fa-expand{display:inline;}
+  .fs-toggle-btn .fa-compress{display:none;}
+  .player-frame-wrap:fullscreen .fs-toggle-btn .fa-expand,.player-frame-wrap:-webkit-full-screen .fs-toggle-btn .fa-expand{display:none;}
+  .player-frame-wrap:fullscreen .fs-toggle-btn .fa-compress,.player-frame-wrap:-webkit-full-screen .fs-toggle-btn .fa-compress{display:inline;}
+  .player-frame-wrap:fullscreen,.player-frame-wrap:-webkit-full-screen{width:100vw;height:100vh;aspect-ratio:auto;border-radius:0;border:none;margin:0;}
+  .player-frame-wrap:fullscreen iframe,.player-frame-wrap:-webkit-full-screen iframe{width:100%;height:100%;}
+  .player-frame-wrap:fullscreen,.player-frame-wrap:-webkit-full-screen{width:100vw;height:100vh;aspect-ratio:auto;border-radius:0;border:none;margin:0;}
+  .player-frame-wrap:fullscreen iframe,.player-frame-wrap:-webkit-full-screen iframe{width:100%;height:100%;}
   .state-msg{text-align:center;padding:3rem 1rem;color:var(--muted);font-size:0.85rem;letter-spacing:0.05em;}
   .spinner{width:24px;height:24px;border:1.5px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;margin:0 auto 14px;}
   @keyframes spin{to{transform:rotate(360deg);}}
@@ -240,7 +253,7 @@
     .mlt-scroll .skeleton-card{flex:0 0 calc((100% - 2*14px)/3);min-width:100px;}
   }
   .server-pills{display:inline-flex;gap:6px;align-items:center;flex-shrink:0;}
-  .server-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:20px;border:1px solid var(--border2);background:transparent;color:var(--muted2);font-family:'Inter',sans-serif;font-size:0.72rem;font-weight:500;letter-spacing:0.04em;cursor:pointer;transition:all 0.18s;white-space:nowrap;}
+  .server-pill{display:inline-flex;align-items:center;gap:7px;padding:8px 20px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--muted2);font-family:'Inter',sans-serif;font-size:0.8rem;font-weight:500;letter-spacing:0.04em;cursor:pointer;transition:all 0.2s;white-space:nowrap;min-height:40px;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
   .server-pill:hover{border-color:var(--accent);color:var(--accent);}
   .server-pill.active{background:var(--accent);border-color:var(--accent);color:#fff;}
   .server-pill .srv-badge{font-size:0.6rem;font-weight:600;letter-spacing:0.06em;background:rgba(255,255,255,0.18);border-radius:10px;padding:1px 7px;margin-left:2px;}
@@ -262,7 +275,7 @@
   .skeleton-card:nth-child(5) .skeleton-img,.skeleton-card:nth-child(5) .skeleton-line{animation-delay:0.32s}
   .skeleton-card:nth-child(6) .skeleton-img,.skeleton-card:nth-child(6) .skeleton-line{animation-delay:0.4s}
   .skeleton-card:nth-child(7) .skeleton-img,.skeleton-card:nth-child(7) .skeleton-line{animation-delay:0.48s}
-  .mob-topbar{display:none;position:fixed;top:0;left:0;right:0;z-index:400;background:rgba(12,12,12,0.95);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);flex-direction:column;padding:0;}
+  .mob-topbar{display:none;position:fixed;top:0;left:0;right:0;z-index:400;background:rgba(12,12,12,0.95);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);flex-direction:column;padding:0;padding-top:env(safe-area-inset-top);}
   .mob-topbar-row1{display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1.2rem;}
   .mob-logo{font-family:system-ui,sans-serif;font-size:1.1rem;font-weight:700;text-transform:uppercase;color:var(--text);}
   .mob-logo em{color:var(--accent);font-style:normal;}
@@ -312,17 +325,27 @@
     .cw-resume-btn{padding:9px 16px;font-size:0.8rem;flex:1;justify-content:center;}
     .player-topbar{padding:0.7rem 1rem;}
     .player-content{padding:1rem;}
-    .player-meta{gap:12px;margin-bottom:1.2rem;}
+    .player-meta{gap:10px;margin-bottom:1rem;}
     .player-info h2{font-size:1.05rem;}
     .meta-sub{font-size:0.68rem;}
     .wl-btn{font-size:0.75rem;padding:7px 14px;}
+    .server-pill{font-size:0.75rem;padding:7px 14px;min-height:36px;gap:6px;}
     .server-pills{order:3;width:100%;margin-top:2px;}
-    .player-info{flex-wrap:wrap;gap:10px;}
+    .player-info{flex-wrap:wrap;gap:8px;}
     .toast-container{bottom:16px;right:16px;left:16px;}
     .toast{max-width:100%;}
     .back-to-top{bottom:16px;right:16px;}
     .search-history{top:calc(100% + 6px);}
     .search-history-row{font-size:0.84rem;padding:10px 14px;}
+    /* Mobile touch targets */
+    .nav-item{padding:12px 1.6rem;min-height:44px;display:flex;align-items:center;}
+    .nav-icon{font-size:1.1rem;width:22px;height:22px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .sidebar-toggle{width:32px;height:32px;display:flex;align-items:center;justify-content:center;}
+    .card-wl-btn,.card-delete-btn{width:32px;height:32px;font-size:0.9rem;}
+    .mob-menu-btn{width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;background:rgba(255,255,255,0.08);border:1px solid var(--border);border-radius:8px;color:var(--text);}
+    /* Fullscreen toggle button */
+    .player-frame-wrap .fs-toggle-btn{display:none;}
+    .player-frame-wrap:fullscreen .fs-toggle-btn,.player-frame-wrap:-webkit-full-screen .fs-toggle-btn{display:flex;}
   }
 
   /* CLEAR / UTILITY BUTTONS */
@@ -553,7 +576,10 @@
     </div>
     <div class="player-content">
       <div class="player-meta" id="playerMeta"></div>
-      <div class="player-frame-wrap">
+      <div class="player-frame-wrap" id="playerFrameWrap">
+        <button class="fs-toggle-btn" id="fsToggleBtn" onclick="toggleFullscreen()" aria-label="Toggle fullscreen">
+          <i class="fa-solid fa-expand"></i><i class="fa-solid fa-compress" style="display:none"></i>
+        </button>
         <iframe id="playerFrame" src="" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
       </div>
     </div>
@@ -844,6 +870,19 @@ function switchPage(page){
 
 function goBack(){switchPage(previousPage);}
 
+function toggleFullscreen(){
+  const wrap=document.getElementById('playerFrameWrap');
+  if(!wrap)return;
+  const isFs=document.fullscreenElement||document.webkitFullscreenElement;
+  if(isFs){
+    if(document.exitFullscreen){document.exitFullscreen();}
+    else if(document.webkitExitFullscreen){document.webkitExitFullscreen();}
+  }else{
+    if(wrap.requestFullscreen){wrap.requestFullscreen();}
+    else if(wrap.webkitRequestFullscreen){wrap.webkitRequestFullscreen();}
+  }
+}
+
 function mobDoSearch(){
   if(!mobSearchType)return;
   const q=document.getElementById('mobSearchInput').value.trim();
@@ -1130,13 +1169,15 @@ async function selectItem(item,type,cardEl){
       <button class="wl-btn ${isInWatchlist(item.id)?'in-list':''}" onclick="toggleWatchlistFromPlayer('${type}')">
         <span class="wl-icon"></span> ${isInWatchlist(item.id)?'In Watchlist':'Add to Watchlist'}
       </button>
-      <div class="server-pills">
-        <button class="server-pill${srv==='videasy'?' active':''}" onclick="switchServer('videasy','${type}')" data-srv="videasy">
-          <i class="fa-solid fa-circle-play"></i> Server 1 <span class="srv-badge">★ Recommended</span>
-        </button>
-        <button class="server-pill${srv==='vidking'?' active':''}" onclick="switchServer('vidking','${type}')" data-srv="vidking">
-          <i class="fa-solid fa-server"></i> Server 2
-        </button>
+      <div class="player-actions">
+        <div class="server-pills">
+          <button class="server-pill${srv==='videasy'?' active':''}" onclick="switchServer('videasy','${type}')" data-srv="videasy">
+            <i class="fa-solid fa-circle-play"></i> Server 1 <span class="srv-badge">★ Recommended</span>
+          </button>
+          <button class="server-pill${srv==='vidking'?' active':''}" onclick="switchServer('vidking','${type}')" data-srv="vidking">
+            <i class="fa-solid fa-server"></i> Server 2
+          </button>
+        </div>
       </div>
     </div>`;
   switchPage('player');
@@ -1476,7 +1517,18 @@ function setupKeyboardShortcuts(){
   document.addEventListener('keydown',(e)=>{
     if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
     switch(e.key.toLowerCase()){
-      case 'f':if(currentPage==='player'){const iframe=document.getElementById('playerFrame');if(document.fullscreenElement){document.exitFullscreen();}else{iframe.requestFullscreen();}}break;
+      case 'f':if(currentPage==='player'){
+        const wrap=document.querySelector('.player-frame-wrap');
+        if(!wrap)return;
+        if(document.fullscreenElement||document.webkitFullscreenElement){
+          if(document.exitFullscreen){document.exitFullscreen();}
+          else if(document.webkitExitFullscreen){document.webkitExitFullscreen();}
+        }else{
+          const el=wrap;
+          if(el.requestFullscreen){el.requestFullscreen();}
+          else if(el.webkitRequestFullscreen){el.webkitRequestFullscreen();}
+        }
+      }break;
       case 'm':toggleSidebar();break;
       case 'escape':if(currentPage==='player')goBack();break;
     }
