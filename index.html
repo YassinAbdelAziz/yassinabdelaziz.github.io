@@ -118,12 +118,14 @@
     </div>
     <div class="search-page-content">
       <div class="search-hero">
-        <div class="search-page-bar">
-          <span class="search-page-bar-icon"><i class="fa-solid fa-magnifying-glass"></i></span>
-          <input type="text" id="searchInput" placeholder="Search movies & TV shows…" autocomplete="off" />
-          <button type="button" id="searchBtn"><span>Search</span></button>
+        <div class="search-bar-wrap">
+          <div class="search-page-bar">
+            <span class="search-page-bar-icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+            <input type="text" id="searchInput" placeholder="Search movies & TV shows…" autocomplete="off" />
+            <button type="button" id="searchBtn"><span>Search</span></button>
+          </div>
+          <div class="recent-search" id="searchPageRecent"></div>
         </div>
-        <div class="recent-search" id="searchPageRecent"></div>
       </div>
       <div class="search-results" id="searchPageResults">
         <div id="searchFeatured"></div>
@@ -179,7 +181,7 @@
       <span class="topbar-title">Continue Watching</span>
     </div>
     <div class="content-section">
-      <div id="cwPageList" class="cw-list"></div>
+      <div id="cwPageList" class="featured-stack"></div>
       <div id="cwPageEmpty" class="cw-empty" style="display:none;">
         <span class="cw-empty-icon">&#9654;</span>
         Nothing here yet.<br>Start watching a title and it'll appear here automatically.
@@ -193,7 +195,7 @@
       <span class="topbar-title">Watchlist</span>
     </div>
     <div class="content-section">
-      <div id="watchlistPageGrid" class="results-grid" style="padding-top:1.5rem;"></div>
+      <div id="watchlistPageGrid" class="featured-stack" style="padding-top:1.5rem;"></div>
       <div id="watchlistPageEmpty" class="state-msg" style="display:none;">Your watchlist is empty.<br>Add titles with the &#9825; button on any card.</div>
     </div>
   </div>

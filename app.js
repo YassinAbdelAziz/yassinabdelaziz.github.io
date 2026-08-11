@@ -174,8 +174,8 @@ function renderRecentSearches(){
     el.appendChild(row);
   });
 }
-function openRecentPanel(){const el=document.getElementById('searchPageRecent');if(el)el.classList.add('open');}
-function closeRecentPanel(){const el=document.getElementById('searchPageRecent');if(el)el.classList.remove('open');}
+function openRecentPanel(){const el=document.getElementById('searchPageRecent');if(!el)return;el.classList.add('open');const wrap=el.parentElement;if(wrap)wrap.classList.add('open');}
+function closeRecentPanel(){const el=document.getElementById('searchPageRecent');if(!el)return;el.classList.remove('open');const wrap=el.parentElement;if(wrap)wrap.classList.remove('open');}
 function setupSearchEvents(){
   const input=document.getElementById('searchInput');
   if(!input)return;
@@ -303,8 +303,10 @@ function switchPage(page){
   if(page==='search'){
     renderRecentSearches();
     const inp=document.getElementById('searchInput');
+    if(searchPage.query)setSearchHash(searchPage.query);
     if(inp&&!searchPage.query&&window.innerWidth>768)setTimeout(()=>inp.focus(),60);
   }
+  if(page!=='search'&&(location.hash||'').indexOf('#search')===0)clearSearchHash();
   if(page==='movies'&&!document.getElementById('movieGrid').children.length)loadPage('movie',1);
   if(page==='tv'&&!document.getElementById('tvGrid').children.length)loadPage('tv',1);
   if(page==='watchlist')renderWatchlistPage();
@@ -381,12 +383,12 @@ function pickFeatured(items){
   return best;
 }
 const featuredDetailsCache={};
-async function loadFeaturedDetails(item){
-  const type=item._homeType;
-  const key=type+':'+item.id;
+async function loadFeaturedDetails(item,type){
+  const t=type||item._homeType;
+  const key=t+':'+item.id;
   if(featuredDetailsCache[key])return featuredDetailsCache[key];
   try{
-    const data=await fetchJSON(`https://api.themoviedb.org/3/${type}/${item.id}?api_key=x`);
+    const data=await fetchJSON(`https://api.themoviedb.org/3/${t}/${item.id}?api_key=x`);
     featuredDetailsCache[key]=data;
     return data;
   }catch{return null;}
@@ -448,6 +450,15 @@ async function renderFeatured(item){
     showToast(nowInList?'Removed from Watchlist':'Added to Watchlist',nowInList?'wl-removed':'wl-added');
   });
 }
+function setSearchHash(q){try{history.replaceState(null,'','#search'+(q?'?q='+encodeURIComponent(q):''));}catch(e){}}
+function clearSearchHash(){try{history.replaceState(null,'',location.pathname);}catch(e){}}
+function readSearchHash(){
+  const h=location.hash||'';
+  if(!h||!h.startsWith('#search'))return null;
+  const qi=h.indexOf('?');
+  if(qi<0)return '';
+  return new URLSearchParams(h.slice(qi+1)).get('q')||'';
+}
 async function performSearch(explicitQuery){
   const input=document.getElementById('searchInput');
   const q=(explicitQuery!==undefined?explicitQuery:(input?input.value:'')).trim();
@@ -455,6 +466,7 @@ async function performSearch(explicitQuery){
   if(!q){resetSearchResults();return;}
   closeRecentPanel();
   searchPage.query=q;searchPage.page=1;
+  setSearchHash(q);
   addToSearchHistory(q);
   await loadSearchResults(1);
 }
@@ -468,6 +480,7 @@ async function loadSearchResults(page){
   const labelEl=document.getElementById('searchResultsLabel');
   const featuredEl=document.getElementById('searchFeatured');
   resultsEl.classList.add('visible');
+  document.getElementById('page-search').classList.add('has-results');
   gridEl.innerHTML='';pagEl.style.display='none';msgEl.style.display='none';
   featuredEl.innerHTML='';
   renderSkeletonGrid(gridEl);
@@ -511,7 +524,10 @@ async function loadSearchResults(page){
     renderFeatured(featured);
   }
   renderSearchPagination();
-  if(page===1)resultsEl.scrollIntoView({behavior:'smooth',block:'start'});
+  if(page===1){
+    const heroEl=document.querySelector('.search-hero');
+    (heroEl||resultsEl).scrollIntoView({behavior:'smooth',block:'start'});
+  }
 }
 function renderSearchPagination(){
   buildPagination(document.getElementById('searchPagination'),searchPage.page,searchPage.totalPages,(pg)=>loadSearchResults(pg));
@@ -525,6 +541,9 @@ function resetSearchResults(){
   const msgEl=document.getElementById('searchMsg');
   const pagEl=document.getElementById('searchPagination');
   if(resultsEl)resultsEl.classList.remove('visible');
+  const pageEl=document.getElementById('page-search');
+  if(pageEl)pageEl.classList.remove('has-results');
+  clearSearchHash();
   if(featuredEl)featuredEl.innerHTML='';
   if(gridEl)gridEl.innerHTML='';
   if(msgEl)msgEl.style.display='none';
@@ -896,51 +915,14 @@ function showRemoveConfirmModal(item){
   document.body.appendChild(backdrop);
 }
 
-async function renderContinuePage(){
+function renderContinuePage(){
   const list=getContinueList();
   const listEl=document.getElementById('cwPageList');
   const empty=document.getElementById('cwPageEmpty');
   listEl.innerHTML='';
   if(!list.length){empty.style.display='block';return;}
   empty.style.display='none';
-  for(const item of list){
-    const resume=getResume(item.id,item.type);
-    const pct=(resume&&resume.duration&&resume.currentTime)?Math.min(100,Math.round((resume.currentTime/resume.duration)*100)):null;
-    const row=document.createElement('div');
-    row.className='cw-item';
-    const thumbId='cw-thumb-'+item.id;
-    let thumbHtml;
-    if(item.type==='tv'){thumbHtml=`<div class="cw-thumb-ep-fallback" id="${thumbId}">&#128250;</div>`;}
-    else{const posterUrl=item.poster?IMG_SM+item.poster:null;thumbHtml=posterUrl?`<img class="cw-thumb-poster" src="${posterUrl}" alt="${sanitize(item.title)}" loading="lazy">`:`<div class="cw-thumb-poster-fallback">&#127916;</div>`;}
-    const subLabel=`${item.type==='movie'?'Movie':'TV Show'}${item.year?' &middot; '+item.year:''}`;
-    const progressHtml=pct!==null?(()=>{
-      const epPart=item.type==='tv'?`${sanitize(resume.label)} &middot; `:'';
-      return`<div class="cw-progress-bar"><div class="cw-progress-fill" style="width:${pct}%"></div></div><div class="cw-progress-label">${epPart}${pct}% &middot; <span class="cw-timestamp">stopped at ${sanitize(resume.timeLabel)}</span></div>`;
-    })():`<div class="cw-progress-label" style="color:var(--muted);">Not started</div>`;
-    const overviewId='cw-overview-'+item.id;
-    row.innerHTML=`${thumbHtml}<div class="cw-info"><div class="cw-title">${sanitize(item.title)}</div><div class="cw-sub">${subLabel}</div><p class="cw-overview" id="${overviewId}"></p>${progressHtml}</div><div class="cw-actions"><button class="cw-resume-btn">&#9654; Resume</button><button class="cw-remove-btn" title="Remove">&#10005;</button></div>`;
-    row.querySelector('.cw-resume-btn').addEventListener('click',(e)=>{e.stopPropagation();selectItem(item,item.type,null);});
-    row.querySelector('.cw-remove-btn').addEventListener('click',(e)=>{e.stopPropagation();showRemoveConfirmModal(item);});
-    row.addEventListener('click',()=>{selectItem(item,item.type,null);});
-    listEl.appendChild(row);
-    if(item.type==='tv'&&resume&&resume.season&&resume.episode){
-      fetchEpisodeThumb(item.id,resume.season,resume.episode).then(({still,overview})=>{
-        const placeholder=document.getElementById(thumbId);if(!placeholder)return;
-        if(still){const img=document.createElement('img');img.className='cw-thumb-ep';img.src=IMG_SM+still;img.alt=item.title;img.loading='lazy';placeholder.replaceWith(img);}
-        else if(item.poster){const img=document.createElement('img');img.className='cw-thumb-poster';img.src=IMG_SM+item.poster;img.alt=item.title;img.loading='lazy';placeholder.replaceWith(img);}
-        const ovEl=document.getElementById(overviewId);if(ovEl&&overview)ovEl.textContent=overview;
-      });
-    }else if(item.type==='movie'){
-      fetchMovieOverview(item.id).then(overview=>{const ovEl=document.getElementById(overviewId);if(ovEl&&overview)ovEl.textContent=overview;});
-    }
-  }
-}
-
-async function fetchEpisodeThumb(showId,season,episode){
-  try{const data=await fetchJSON(`https://api.themoviedb.org/3/tv/${showId}/season/${season}/episode/${episode}?api_key=x`);return{still:data.still_path||null,overview:data.overview||''};}catch{return{still:null,overview:''};}}
-
-async function fetchMovieOverview(movieId){
-  try{const data=await fetchJSON(`https://api.themoviedb.org/3/movie/${movieId}?api_key=x`);return data.overview||'';}catch{return'';}
+  list.forEach(stored=>listEl.appendChild(makeFeaturedCard(stored,'cw')));
 }
 
 function getWatchlist(){try{return JSON.parse(localStorage.getItem('screenify_watchlist')||'[]');}catch{return[];}}
@@ -970,6 +952,84 @@ function renderHomeWatchlist(){
     grid.appendChild(card);
   });
 }
+function makeFeaturedCard(stored,mode){
+  const type=stored.type||stored._homeType||'movie';
+  const title=stored.title||'';
+  const year=stored.year||(stored.release_date||stored.first_air_date||'').slice(0,4);
+  const rating=stored.rating!=null?Number(stored.rating).toFixed(1):stored.vote_average!=null?Number(stored.vote_average).toFixed(1):null;
+  const posterUrl=stored.poster_path?IMG+stored.poster_path:(stored.poster?IMG+stored.poster:null);
+  const el=document.createElement('div');
+  el.className='featured';
+  let progressHtml='';
+  let playLabel=mode==='cw'?'Resume':'Watch now';
+  if(mode==='cw'){
+    const resume=getResume(stored.id,type);
+    const pct=(resume&&resume.duration&&resume.currentTime)?Math.min(100,Math.round((resume.currentTime/resume.duration)*100)):null;
+    if(pct!==null){
+      const epPart=type==='tv'&&resume.label?sanitize(resume.label)+' &middot; ':'';
+      progressHtml=`<div class="cw-progress-bar"><div class="cw-progress-fill" style="width:${pct}%"></div></div><div class="cw-progress-label">${epPart}${pct}% &middot; <span class="cw-timestamp">${resume.timeLabel}</span></div>`;
+    }else{
+      progressHtml='<div class="cw-progress-label" style="color:var(--muted);">Not started</div>';
+      playLabel='Watch now';
+    }
+  }
+  el.innerHTML=`
+    <div class="featured-body">
+      <div class="featured-poster">
+        ${posterUrl?`<img src="${posterUrl}" alt="${sanitize(title)}" loading="lazy">`:`<div class="featured-no-poster">&#127916;</div>`}
+      </div>
+      <div class="featured-info">
+        <span class="featured-type">${type==='movie'?'Movie':'TV Show'}</span>
+        <h2 class="featured-title">${sanitize(title)}</h2>
+        <div class="featured-meta">
+          ${year?`<span>${sanitize(year)}</span>`:''}
+          ${rating?`<span><i class="fa-solid fa-star" style="color:var(--accent);"></i> ${rating}</span>`:''}
+        </div>
+        <p class="featured-overview"></p>
+        ${progressHtml}
+        <div class="featured-actions">
+          <button type="button" class="featured-play"><i class="fa-solid fa-play"></i> ${playLabel}</button>
+          <button type="button" class="featured-remove-btn">${mode==='cw'?'Remove from Continue Watching':'Remove from Watchlist'}</button>
+        </div>
+      </div>
+    </div>`;
+  el.querySelector('.featured-play').addEventListener('click',(e)=>{
+    e.stopPropagation();
+    selectItem({...stored,type},type,null);
+  });
+  el.querySelector('.featured-remove-btn').addEventListener('click',(e)=>{
+    e.stopPropagation();
+    if(mode==='cw'){showRemoveConfirmModal({...stored,type});}
+    else{removeFromWatchlist(stored.id);showToast('Removed from Watchlist','wl-removed');}
+  });
+  loadFeaturedDetails({...stored,type,_homeType:type},type).then(details=>{
+    if(!details||!el.isConnected)return;
+    if(details.backdrop_path){
+      el.insertAdjacentHTML('afterbegin',`<div class="featured-bg" style="background-image:url('${IMG_BG}${details.backdrop_path}')"></div><div class="featured-shade"></div>`);
+    }
+    const ovEl=el.querySelector('.featured-overview');
+    if(ovEl){
+      if(details.overview)ovEl.textContent=details.overview;
+      else ovEl.style.display='none';
+    }
+    const metaEl=el.querySelector('.featured-meta');
+    if(metaEl&&type==='tv'&&details.number_of_seasons){
+      metaEl.insertAdjacentHTML('beforeend',`<span>${details.number_of_seasons} Season${details.number_of_seasons>1?'s':''}</span>`);
+    }
+    if(details.genres&&details.genres.length){
+      const tagsEl=document.createElement('div');
+      tagsEl.className='featured-tags';
+      tagsEl.innerHTML=details.genres.filter(g=>g&&g.name).map(g=>`<span class="featured-tag">${sanitize(g.name)}</span>`).join('');
+      metaEl.insertAdjacentElement('afterend',tagsEl);
+    }
+  });
+  return el;
+}
+function removeFromWatchlist(id){
+  saveWatchlist(getWatchlist().filter(i=>i.id!==id));
+  if(currentPage==='watchlist')renderWatchlistPage();
+  if(currentPage==='home')renderHomeWatchlist();
+}
 function renderWatchlistPage(){
   const list=getWatchlist();
   const grid=document.getElementById('watchlistPageGrid');
@@ -977,7 +1037,7 @@ function renderWatchlistPage(){
   grid.innerHTML='';
   if(!list.length){empty.style.display='block';return;}
   empty.style.display='none';
-  list.forEach(item=>grid.appendChild(makeCard(item,item.type,{showWl:true})));
+  list.forEach(stored=>grid.appendChild(makeFeaturedCard(stored,'wl')));
 }
 
 function fmtTime(secs){
@@ -1064,7 +1124,14 @@ function setupKeyboardShortcuts(){
   loadHomeTrendingRow('tv','home-tvRow');
   renderRecentSearches();
   setupSearchEvents();
-  switchPage('home');
+  const hq=readSearchHash();
+  if(hq!==null){
+    searchPage.query=hq;
+    switchPage('search');
+    if(hq)performSearch(hq);
+  }else{
+    switchPage('home');
+  }
   setupKeyboardShortcuts();
   handleBackToTop();
   document.querySelectorAll('.nav-item').forEach(n=>{
