@@ -2,6 +2,7 @@
 const API_BASE = 'https://screenify-worker.yassinmovies.workers.dev/api/tmdb';
 const IMG='https://image.tmdb.org/t/p/w780';
 const IMG_SM='https://image.tmdb.org/t/p/w500';
+const IMG_BG='https://image.tmdb.org/t/p/w1280';
 const IMG_ORIG='https://image.tmdb.org/t/p/original';
 const ACCENT='ff2e2e';
 // Embeds are loaded directly from the source hosts (vidking.net / player.videasy.net)
@@ -16,15 +17,15 @@ function setActiveServer(key){localStorage.setItem('screenify_server',key);}
 if(localStorage.getItem('screenify_server')==='vidking'&&!localStorage.getItem('screenify_server_chosen')){localStorage.removeItem('screenify_server');}
 
 const state={
-  movie:{mode:'trending',query:'',page:1,totalPages:500,loading:false,selected:null},
-  tv:{mode:'trending',query:'',page:1,totalPages:500,loading:false,selected:null}
+  movie:{page:1,totalPages:500,loading:false,selected:null},
+  tv:{page:1,totalPages:500,loading:false,selected:null}
 };
-const homeSearch={type:'movie',query:'',page:1,totalPages:1,loading:false};
+const searchPage={query:'',page:1,totalPages:1,loading:false,results:[],featured:null};
+let searchRequestSeq=0;
 let currentPage='home';
 let previousPage='home';
 let savedScroll={};
 let sidebarCollapsed=false;
-let mobSearchType=null;
 let nowPlayingEp={season:null,episode:null};
 
 // ============ SANITIZE ============
@@ -50,89 +51,127 @@ function notAdult(item){
   return !(t&&ADULT_TITLE_BLOCK.test(t));
 }
 
-// ============ SEARCH HISTORY ============
-// Keep up to 100 queries in storage, but only ever surface the 5 most recent
-// in the dropdown so deleting a shown entry pulls the next hidden one up.
+// ============ RECENT SEARCHES ============
+// Store up to 100 queries in persistent storage, but only ever surface the 5
+// most recent in the UI. Deleting or clearing must not close the list.
 const MAX_HISTORY=100;
 const MAX_HISTORY_SHOWN=5;
-const HISTORY_VIEWS=[
-  {input:'homeSearchInput',wrap:'searchHistory',pick:(q)=>{const i=document.getElementById('homeSearchInput');if(i)i.value=q;hideSearchHistory();doHomeSearch();}},
-  {input:'movieSearch',wrap:'movieSearchHistory',pick:(q)=>{const i=document.getElementById('movieSearch');if(i)i.value=q;if(i)i.blur();doSearch('movie');}},
-  {input:'tvSearch',wrap:'tvSearchHistory',pick:(q)=>{const i=document.getElementById('tvSearch');if(i)i.value=q;if(i)i.blur();doSearch('tv');}},
-  {input:'mobSearchInput',wrap:'mobSearchHistory',pick:(q)=>{const i=document.getElementById('mobSearchInput');if(i)i.value=q;if(i)i.blur();mobDoSearch();}}
-];
-function getSearchHistory(){try{const arr=JSON.parse(localStorage.getItem('screenify_search_history')||'[]');return Array.isArray(arr)?arr.filter(q=>typeof q==='string'&&q.trim()).slice(0,MAX_HISTORY):[];}catch{return[];}}
-function saveSearchHistory(list){localStorage.setItem('screenify_search_history',JSON.stringify(list.slice(0,MAX_HISTORY)));}
+function getSearchHistory(){
+  try{
+    const raw=localStorage.getItem('screenify_search_history');
+    const arr=raw?JSON.parse(raw):[];
+    if(!Array.isArray(arr))return[];
+    const seen=new Set();
+    const out=[];
+    for(const q of arr){
+      if(typeof q!=='string')continue;
+      const t=q.trim();
+      if(!t)continue;
+      const key=t.toLowerCase();
+      if(seen.has(key))continue;
+      seen.add(key);
+      out.push(t);
+    }
+    return out.slice(0,MAX_HISTORY);
+  }catch{return[];}
+}
+function saveSearchHistory(list){
+  try{localStorage.setItem('screenify_search_history',JSON.stringify(list.slice(0,MAX_HISTORY)));}catch(e){}
+}
 function addToSearchHistory(query){
-  if(!query||!query.trim())return;
-  const list=getSearchHistory().filter(q=>q!==query);
-  list.unshift(query);
+  const q=(query||'').trim();
+  if(!q)return;
+  const list=getSearchHistory().filter(x=>x.toLowerCase()!==q.toLowerCase());
+  list.unshift(q);
   saveSearchHistory(list);
-  renderSearchHistory();
+  renderRecentSearches();
 }
 function removeQueryFromHistory(query){
-  saveSearchHistory(getSearchHistory().filter(q=>q!==query));
-  renderSearchHistory();
+  const q=(query||'').trim();
+  saveSearchHistory(getSearchHistory().filter(x=>x.toLowerCase()!==q.toLowerCase()));
+  renderRecentSearches();
 }
 function clearAllSearchHistory(){
   saveSearchHistory([]);
-  renderSearchHistory();
+  renderRecentSearches();
 }
-function hideSearchHistory(){
-  HISTORY_VIEWS.forEach(v=>{const el=document.getElementById(v.wrap);if(el)el.classList.remove('visible');});
+function showClearHistoryModal(){
+  const existing=document.getElementById('clearHistoryModal');
+  if(existing)existing.remove();
+  const backdrop=document.createElement('div');
+  backdrop.className='cw-modal-backdrop';
+  backdrop.id='clearHistoryModal';
+  backdrop.innerHTML=`
+    <div class="cw-modal">
+      <div class="cw-modal-icon">🗑️</div>
+      <div class="cw-modal-title">Clear all recent searches?</div>
+      <div class="cw-modal-body">This removes your entire saved search history. This can't be undone.</div>
+      <div class="cw-modal-btns">
+        <button type="button" class="cw-modal-cancel">Cancel</button>
+        <button type="button" class="cw-modal-confirm">Clear all</button>
+      </div>
+    </div>`;
+  backdrop.querySelector('.cw-modal-cancel').addEventListener('click',()=>backdrop.remove());
+  backdrop.querySelector('.cw-modal-confirm').addEventListener('click',()=>{backdrop.remove();clearAllSearchHistory();});
+  backdrop.addEventListener('click',(e)=>{if(e.target===backdrop)backdrop.remove();});
+  document.body.appendChild(backdrop);
 }
-function historyMatches(list,current){const t=(current||'').trim().toLowerCase();return t?list.filter(x=>x.toLowerCase().startsWith(t)):list;}
-function renderSearchHistory(){
+function renderRecentSearches(){
+  const el=document.getElementById('searchPageRecent');
+  if(!el)return;
+  const input=document.getElementById('searchInput');
   const all=getSearchHistory();
-  HISTORY_VIEWS.forEach(v=>{
-    const el=document.getElementById(v.wrap);
-    if(!el)return;
-    const inp=document.getElementById(v.input);
-    const list=historyMatches(all,inp?inp.value:'');
-    el.innerHTML='';
-    if(!list.length){el.classList.remove('visible');return;}
-    const head=document.createElement('div');
-    head.className='search-history-head';
-    const headLabel=document.createElement('span');
-    headLabel.textContent='Recent searches';
-    head.appendChild(headLabel);
-    const clearBtn=document.createElement('button');
-    clearBtn.type='button';clearBtn.className='search-history-clear';clearBtn.title='Clear all recent searches';clearBtn.setAttribute('aria-label','Clear all recent searches');
-    clearBtn.innerHTML='<span class="cb-x">&#10005;</span> Clear';
-    clearBtn.addEventListener('click',(ev)=>{ev.stopPropagation();clearAllSearchHistory();});
-    head.appendChild(clearBtn);
-    el.appendChild(head);
-    list.slice(0,MAX_HISTORY_SHOWN).forEach(q=>{
-      const row=document.createElement('div');
-      row.className='search-history-row';
-      row.setAttribute('role','button');row.setAttribute('tabindex','0');
-      row.innerHTML='<span class="hist-search"><i class="fa-solid fa-magnifying-glass"></i></span><span class="hist-label"></span><button type="button" class="hist-del" title="Remove from history" aria-label="Remove from history">&#10005;</button>';
-      row.querySelector('.hist-label').textContent=q;
-      row.addEventListener('click',()=>v.pick(q));
-      row.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();v.pick(q);}});
-      row.querySelector('.hist-del').addEventListener('click',(ev)=>{ev.stopPropagation();removeQueryFromHistory(q);});
-      el.appendChild(row);
+  const current=input?input.value:'';
+  const t=current.trim().toLowerCase();
+  const list=t?all.filter(x=>x.toLowerCase().startsWith(t)):all;
+  const shown=list.slice(0,MAX_HISTORY_SHOWN);
+  el.innerHTML='';
+  if(!shown.length){
+    const empty=document.createElement('div');
+    empty.className='recent-search-empty';
+    empty.textContent=t?'No matching recent searches.':'Your recent searches will appear here.';
+    el.appendChild(empty);
+    return;
+  }
+  const head=document.createElement('div');
+  head.className='recent-search-head';
+  const label=document.createElement('span');
+  label.textContent=t?'Matching searches':'Recent searches';
+  head.appendChild(label);
+  const clearBtn=document.createElement('button');
+  clearBtn.type='button';
+  clearBtn.className='recent-search-clear';
+  clearBtn.title='Clear all recent searches';
+  clearBtn.setAttribute('aria-label','Clear all recent searches');
+  clearBtn.textContent='Clear all';
+  clearBtn.addEventListener('click',(ev)=>{ev.stopPropagation();showClearHistoryModal();});
+  head.appendChild(clearBtn);
+  el.appendChild(head);
+  shown.forEach(q=>{
+    const row=document.createElement('div');
+    row.className='recent-search-row';
+    row.setAttribute('role','button');row.setAttribute('tabindex','0');
+    row.innerHTML='<span class="recent-search-icon"><i class="fa-solid fa-clock-rotate-left"></i></span><span class="recent-search-text"></span><button type="button" class="recent-search-del" title="Remove from history" aria-label="Remove from history">&#10005;</button>';
+    row.querySelector('.recent-search-text').textContent=q;
+    const pick=()=>{if(input)input.value=q;performSearch(q);};
+    row.addEventListener('click',pick);
+    row.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick();}});
+    row.querySelector('.recent-search-del').addEventListener('click',(ev)=>{
+      ev.stopPropagation();
+      ev.preventDefault();
+      removeQueryFromHistory(q);
     });
-    el.classList.toggle('visible',all.length>0&&document.activeElement===inp&&list.length>0);
+    el.appendChild(row);
   });
 }
-function refreshHistoryVisibility(){
-  HISTORY_VIEWS.forEach(v=>{
-    const el=document.getElementById(v.wrap);const inp=document.getElementById(v.input);
-    if(!el||!inp)return;
-    const list=historyMatches(getSearchHistory(),inp.value);
-    el.classList.toggle('visible',list.length>0&&document.activeElement===inp);
-  });
-}
-function setupSearchHistoryEvents(){
-  HISTORY_VIEWS.forEach(v=>{
-    const inp=document.getElementById(v.input);
-    if(!inp)return;
-    inp.addEventListener('focus',refreshHistoryVisibility);
-    inp.addEventListener('input',renderSearchHistory);
-    inp.addEventListener('blur',()=>{setTimeout(refreshHistoryVisibility,140);});
-    inp.addEventListener('keydown',e=>{if(e.key==='Enter')hideSearchHistory();});
-  });
+function setupSearchEvents(){
+  const input=document.getElementById('searchInput');
+  if(!input)return;
+  input.addEventListener('input',renderRecentSearches);
+  input.addEventListener('focus',renderRecentSearches);
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();performSearch();}});
+  const btn=document.getElementById('searchBtn');
+  if(btn)btn.addEventListener('click',()=>performSearch());
 }
 
 // ============ SHORTCUT MODAL ============
@@ -232,26 +271,14 @@ function switchPage(page){
   currentPage=page;
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('mobOverlay').classList.remove('open');
-  hideSearchHistory();
-  const searchPages={movies:{type:'movie',placeholder:'Search movies…'},tv:{type:'tv',placeholder:'Search TV shows…'}};
-  const searchRow=document.getElementById('mobSearchRow');
-  const mobInput=document.getElementById('mobSearchInput');
-  const mainEl=document.querySelector('.main');
-  const pageTitles={home:'',movies:'Movies',tv:'TV Shows',continue:'Continue',watchlist:'Watchlist',player:''};
+  const pageTitles={home:'',search:'Search',movies:'Movies',tv:'TV Shows',continue:'Continue',watchlist:'Watchlist',player:''};
   document.getElementById('mobPageTitle').textContent=pageTitles[page]||'';
-  if(searchPages[page]){
-    mobSearchType=searchPages[page].type;
-    mobInput.placeholder=searchPages[page].placeholder;
-    searchRow.classList.add('visible');
-    mainEl.classList.add('has-mob-search');
-  }else{
-    mobSearchType=null;
-    searchRow.classList.remove('visible');
-    mainEl.classList.remove('has-mob-search');
-    mobInput.value='';
-  }
   if(page!=='player'){const pf=document.getElementById('playerFrame');if(pf){pf.removeAttribute('src');pf.onload=null;pf.style.opacity='';}const mlt=document.getElementById('moreLikeThisSection');if(mlt)mlt.style.display='none';}
-  if(page==='home'){const hsr=document.getElementById('homeSearchResults');if(hsr&&!homeSearch.query)hsr.style.display='none';renderSearchHistory();}
+  if(page==='search'){
+    renderRecentSearches();
+    const inp=document.getElementById('searchInput');
+    if(inp&&!searchPage.query&&window.innerWidth>768)setTimeout(()=>inp.focus(),60);
+  }
   if(page==='movies'&&!document.getElementById('movieGrid').children.length)loadPage('movie',1);
   if(page==='tv'&&!document.getElementById('tvGrid').children.length)loadPage('tv',1);
   if(page==='watchlist')renderWatchlistPage();
@@ -263,14 +290,6 @@ function switchPage(page){
 }
 
 function goBack(){switchPage(previousPage);}
-
-function mobDoSearch(){
-  if(!mobSearchType)return;
-  const q=document.getElementById('mobSearchInput').value.trim();
-  const desktopInput=document.getElementById(mobSearchType==='movie'?'movieSearch':'tvSearch');
-  if(desktopInput)desktopInput.value=q;
-  doSearch(mobSearchType);
-}
 
 function toggleMobMenu(){
   document.getElementById('sidebar').classList.toggle('open');
@@ -320,47 +339,129 @@ async function loadHomeTrendingRow(tmdbType,containerId){
   }
 }
 
-async function doSearch(type){
-  const q=document.getElementById(type==='movie'?'movieSearch':'tvSearch').value.trim();
-  const s=state[type];
-  const labelEl=document.getElementById(type==='movie'?'movieResultsLabel':'tvResultsLabel');
-  if(!q){s.mode='trending';s.query='';s.page=1;labelEl.textContent='Trending this week';return loadPage(type,1);}
-  s.mode='search';s.query=q;s.page=1;labelEl.textContent='"'+sanitize(q)+'"';
-  addToSearchHistory(q);
-  await loadPage(type,1);
+// ============ SEARCH PAGE ============
+function pickFeatured(items){
+  if(!items.length)return null;
+  let best=items[0],bestScore=-Infinity;
+  items.forEach((it,i)=>{
+    const score=(Math.max(0,100-i*4))
+      +(Number(it.popularity)||0)
+      +(Number(it.vote_average)||0)*6
+      +(it.backdrop_path?35:0)
+      +(it.poster_path?25:0)
+      +(it.overview?15:0);
+    if(score>bestScore){bestScore=score;best=it;}
+  });
+  return best;
 }
-
-async function doHomeSearch(){
-  const q=document.getElementById('homeSearchInput').value.trim();
-  if(!q){clearHomeSearch();return;}
-  homeSearch.query=q;homeSearch.page=1;
-  addToSearchHistory(q);
-  await loadHomeSearch(1);
+const featuredDetailsCache={};
+async function loadFeaturedDetails(item){
+  const type=item._homeType;
+  const key=type+':'+item.id;
+  if(featuredDetailsCache[key])return featuredDetailsCache[key];
+  try{
+    const data=await fetchJSON(`https://api.themoviedb.org/3/${type}/${item.id}?api_key=x`);
+    featuredDetailsCache[key]=data;
+    return data;
+  }catch{return null;}
 }
-async function loadHomeSearch(page){
-  if(homeSearch.loading)return;
-  homeSearch.loading=true;
-  const resultsEl=document.getElementById('homeSearchResults');
-  const gridEl=document.getElementById('homeSearchGrid');
-  const msgEl=document.getElementById('homeSearchMsg');
-  const pagEl=document.getElementById('homeSearchPagination');
-  const labelEl=document.getElementById('homeSearchLabel');
-  resultsEl.style.display='block';
+async function renderFeatured(item){
+  const seq=searchRequestSeq;
+  const el=document.getElementById('searchFeatured');
+  if(!el)return;
+  if(!item){el.innerHTML='';return;}
+  el.innerHTML='<div class="featured-skeleton"><div class="featured-sk-l"></div><div class="featured-sk-r"><div class="featured-sk-line tall"></div><div class="featured-sk-line short"></div><div class="featured-sk-line"></div></div></div>';
+  const details=await loadFeaturedDetails(item);
+  if(seq!==searchRequestSeq)return;
+  const type=item._homeType;
+  const full={...item,...(details||{})};
+  const title=full.title||full.name||'';
+  const year=(full.release_date||full.first_air_date||full.year||'').slice(0,4);
+  const rating=Number(full.vote_average)||0;
+  const overview=full.overview||'';
+  const genres=details&&Array.isArray(details.genres)?details.genres.map(g=>(g&&g.name)?g.name:'').filter(Boolean):[];
+  const runtime=type==='movie'&&details?details.runtime:null;
+  const seasons=type==='tv'&&details?details.number_of_seasons:null;
+  const backdrop=full.backdrop_path||null;
+  const poster=full.poster_path||null;
+  const inList=isInWatchlist(item.id);
+  el.innerHTML=`
+    <div class="featured">
+      ${backdrop?`<div class="featured-bg" style="background-image:url('${IMG_BG}${backdrop}')"></div>`:''}
+      <div class="featured-shade"></div>
+      <div class="featured-body">
+        <div class="featured-poster">
+          ${poster?`<img src="${IMG}${poster}" alt="${sanitize(title)}" loading="lazy">`:`<div class="featured-no-poster">&#127916;</div>`}
+        </div>
+        <div class="featured-info">
+          <span class="featured-type">${type==='movie'?'Movie':'TV Show'}</span>
+          <h2 class="featured-title">${sanitize(title)}</h2>
+          <div class="featured-meta">
+            ${year?`<span>${year}</span>`:''}
+            ${rating?`<span><i class="fa-solid fa-star" style="color:var(--accent);"></i> ${rating.toFixed(1)}</span>`:''}
+            ${runtime?`<span>${runtime} min</span>`:''}
+            ${seasons?`<span>${seasons} Season${seasons>1?'s':''}</span>`:''}
+          </div>
+          ${genres.length?`<div class="featured-tags">${genres.map(g=>`<span class="featured-tag">${sanitize(g)}</span>`).join('')}</div>`:''}
+          ${overview?`<p class="featured-overview">${sanitize(overview)}</p>`:''}
+          <div class="featured-actions">
+            <button type="button" class="featured-play"><i class="fa-solid fa-play"></i> Watch now</button>
+            <button type="button" class="wl-btn ${inList?'in-list':''} featured-wl"><span class="wl-icon"></span> ${inList?'In Watchlist':'Watchlist'}</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  el.querySelector('.featured-play').addEventListener('click',()=>selectItem(full,type,null));
+  const wlBtn=el.querySelector('.featured-wl');
+  wlBtn.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    toggleWatchlistItem({...full,type});
+    const nowInList=wlBtn.classList.contains('in-list');
+    wlBtn.classList.toggle('in-list');
+    wlBtn.innerHTML=`<span class="wl-icon"></span> ${wlBtn.classList.contains('in-list')?'In Watchlist':'Watchlist'}`;
+    showToast(nowInList?'Removed from Watchlist':'Added to Watchlist',nowInList?'wl-removed':'wl-added');
+  });
+}
+async function performSearch(explicitQuery){
+  const input=document.getElementById('searchInput');
+  const q=(explicitQuery!==undefined?explicitQuery:(input?input.value:'')).trim();
+  if(input)input.value=q;
+  if(!q){resetSearchResults();return;}
+  searchPage.query=q;searchPage.page=1;
+  addToSearchHistory(q);
+  await loadSearchResults(1);
+}
+async function loadSearchResults(page){
+  const seq=++searchRequestSeq;
+  searchPage.loading=true;
+  const resultsEl=document.getElementById('searchPageResults');
+  const gridEl=document.getElementById('searchGrid');
+  const msgEl=document.getElementById('searchMsg');
+  const pagEl=document.getElementById('searchPagination');
+  const labelEl=document.getElementById('searchResultsLabel');
+  const featuredEl=document.getElementById('searchFeatured');
+  resultsEl.classList.add('visible');
   gridEl.innerHTML='';pagEl.style.display='none';msgEl.style.display='none';
+  featuredEl.innerHTML='';
   renderSkeletonGrid(gridEl);
-  labelEl.textContent=`"${homeSearch.query}"`;
-  const q=encodeURIComponent(homeSearch.query);
+  const q=encodeURIComponent(searchPage.query);
   let dm,dt;
   try{
     const mkMovie=(p)=>`https://api.themoviedb.org/3/search/movie?api_key=x&page=${p}&query=${q}`;
     const mkTv=(p)=>`https://api.themoviedb.org/3/search/tv?api_key=x&page=${p}&query=${q}`;
     [dm,dt]=await Promise.all([fetchJSON(mkMovie(page)),fetchJSON(mkTv(page))]);
   }catch(err){
-    console.error('[screenify] home search failed',err);
-    gridEl.innerHTML='';msgEl.style.display='block';msgEl.textContent='Something went wrong. Please try again.';
-    homeSearch.loading=false;return;
+    searchPage.loading=false;
+    if(seq!==searchRequestSeq)return;
+    console.error('[screenify] search failed',err);
+    gridEl.innerHTML='';featuredEl.innerHTML='';
+    msgEl.style.display='block';msgEl.textContent='Something went wrong. Please try again.';
+    labelEl.textContent='"'+sanitize(searchPage.query)+'"';
+    return;
   }
-  homeSearch.totalPages=Math.max(Math.min((dm&&dm.total_pages)||1,500),Math.min((dt&&dt.total_pages)||1,500));
+  searchPage.loading=false;
+  if(seq!==searchRequestSeq)return;
+  searchPage.totalPages=Math.max(Math.min((dm&&dm.total_pages)||1,500),Math.min((dt&&dt.total_pages)||1,500));
   const movies=((dm&&dm.results)||[]).filter(notAdult).map(r=>({...r,_homeType:'movie'}));
   const shows=((dt&&dt.results)||[]).filter(notAdult).map(r=>({...r,_homeType:'tv'}));
   const interleaved=[];
@@ -369,13 +470,38 @@ async function loadHomeSearch(page){
   const isMobile=window.innerWidth<=768;
   const cols=isMobile?3:7;
   const items=interleaved.slice(0,Math.floor(interleaved.length/cols)*cols||interleaved.length);
-  msgEl.style.display='none';homeSearch.page=page;
+  const featured=pickFeatured(items);
+  searchPage.results=items;
+  searchPage.featured=featured;
+  searchPage.page=page;
   gridEl.innerHTML='';
-  if(!items.length){msgEl.style.display='block';msgEl.innerHTML='No results found.';}
-  else{items.forEach(item=>gridEl.appendChild(makeHomeCard(item)));}
-  renderHomeSearchPagination();
-  resultsEl.scrollIntoView({behavior:'smooth',block:'start'});
-  homeSearch.loading=false;
+  labelEl.textContent='"'+sanitize(searchPage.query)+'"';
+  if(!items.length){
+    msgEl.style.display='block';
+    msgEl.innerHTML='No results found for "<strong>'+sanitize(searchPage.query)+'</strong>". Try a different title or spelling.';
+  }else{
+    items.forEach(item=>{if(item!==featured)gridEl.appendChild(makeHomeCard(item));});
+    renderFeatured(featured);
+  }
+  renderSearchPagination();
+  if(page===1)resultsEl.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function renderSearchPagination(){
+  buildPagination(document.getElementById('searchPagination'),searchPage.page,searchPage.totalPages,(pg)=>loadSearchResults(pg));
+}
+function resetSearchResults(){
+  searchPage.query='';searchPage.page=1;searchPage.totalPages=1;searchPage.results=[];searchPage.featured=null;
+  searchRequestSeq++;
+  const resultsEl=document.getElementById('searchPageResults');
+  const featuredEl=document.getElementById('searchFeatured');
+  const gridEl=document.getElementById('searchGrid');
+  const msgEl=document.getElementById('searchMsg');
+  const pagEl=document.getElementById('searchPagination');
+  if(resultsEl)resultsEl.classList.remove('visible');
+  if(featuredEl)featuredEl.innerHTML='';
+  if(gridEl)gridEl.innerHTML='';
+  if(msgEl)msgEl.style.display='none';
+  if(pagEl)pagEl.style.display='none';
 }
 function makeHomeCard(item){
   const type=item._homeType;
@@ -411,15 +537,6 @@ function buildPagination(el,p,t,go){
   el.appendChild(mkBtn('\u2192',p+1,true,p>=t));
   el.appendChild(mkBtn('\u00BB',p+10,true,p+10>t));
 }
-function renderHomeSearchPagination(){
-  buildPagination(document.getElementById('homeSearchPagination'),homeSearch.page,homeSearch.totalPages,(pg)=>loadHomeSearch(pg));
-}
-function clearHomeSearch(){
-  homeSearch.query='';homeSearch.page=1;
-  document.getElementById('homeSearchInput').value='';
-  document.getElementById('homeSearchResults').style.display='none';
-  document.getElementById('homeSearchGrid').innerHTML='';
-}
 
 async function loadPage(type,page){
   const s=state[type];
@@ -430,13 +547,12 @@ async function loadPage(type,page){
   const pagEl=document.getElementById(type==='movie'?'moviePagination':'tvPagination');
   gridEl.innerHTML='';pagEl.style.display='none';msgEl.style.display='none';
   renderSkeletonGrid(gridEl);
-  const endpoint=s.mode==='trending'?(type==='movie'?'trending/movie/week':'trending/tv/week'):(type==='movie'?'search/movie':'search/tv');
-  const mkUrl=(p)=>{let u=`https://api.themoviedb.org/3/${endpoint}?api_key=x&page=${p}`;if(s.mode==='search')u+='&query='+encodeURIComponent(s.query);return u;};
+  const endpoint=type==='movie'?'trending/movie/week':'trending/tv/week';
+  const mkUrl=(p)=>`https://api.themoviedb.org/3/${endpoint}?api_key=x&page=${p}`;
   const cols=window.innerWidth<=768?3:7;
   let items=[];
   try{
     const d1=await fetchJSON(mkUrl(page));
-    if(s.mode==='search')s.totalPages=Math.min(d1.total_pages||1,500);
     const page1=(d1.results||[]).filter(notAdult);
     items=page1.slice();
     // Only fetch a second page when the first leaves a partial final row to fill (e.g. mobile).
@@ -528,7 +644,7 @@ function renderPagination(type){
   buildPagination(el,s.page,s.totalPages,(pg)=>loadPage(type,pg));
 }
 
-const PAGE_LABELS={home:'Home',movies:'Movies',tv:'TV Shows',continue:'Continue Watching',watchlist:'Watchlist'};
+const PAGE_LABELS={home:'Home',search:'Search',movies:'Movies',tv:'TV Shows',continue:'Continue Watching',watchlist:'Watchlist'};
 
 async function selectItem(item,type,cardEl){
   document.querySelectorAll('.card').forEach(c=>c.classList.remove('selected'));
@@ -919,8 +1035,8 @@ function setupKeyboardShortcuts(){
   renderHomeContinue();renderHomeWatchlist();
   loadHomeTrendingRow('movie','home-moviesRow');
   loadHomeTrendingRow('tv','home-tvRow');
-  renderSearchHistory();
-  setupSearchHistoryEvents();
+  renderRecentSearches();
+  setupSearchEvents();
   switchPage('home');
   setupKeyboardShortcuts();
   handleBackToTop();

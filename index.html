@@ -28,15 +28,6 @@
       <button class="mob-menu-btn" onclick="toggleMobMenu()" aria-label="Toggle menu">&#9776;</button>
     </div>
   </div>
-  <div class="mob-search-row" id="mobSearchRow">
-    <div class="mob-search-bar-wrap">
-      <div class="mob-search-bar">
-        <input type="text" id="mobSearchInput" placeholder="" onkeydown="if(event.key==='Enter')mobDoSearch()" autocomplete="off" />
-        <button onclick="mobDoSearch()">Search</button>
-      </div>
-      <div class="search-history" id="mobSearchHistory"></div>
-    </div>
-  </div>
 </div>
 <div class="mob-overlay" id="mobOverlay" onclick="toggleMobMenu()"></div>
 
@@ -51,6 +42,9 @@
     <div class="nav-section-label">Browse</div>
     <div class="nav-item active" id="nav-home" onclick="switchPage('home')">
       <span class="nav-icon"><i class="fa-solid fa-house"></i></span><span class="nav-label">Home</span><span class="nav-tooltip">Home</span>
+    </div>
+    <div class="nav-item" id="nav-search" onclick="switchPage('search')">
+      <span class="nav-icon"><i class="fa-solid fa-magnifying-glass"></i></span><span class="nav-label">Search</span><span class="nav-tooltip">Search</span>
     </div>
     <div class="nav-item" id="nav-movies" onclick="switchPage('movies')">
       <span class="nav-icon"><i class="fa-solid fa-film"></i></span><span class="nav-label">Movies</span><span class="nav-tooltip">Movies</span>
@@ -82,24 +76,6 @@
     <div class="home-hero">
       <h1>Watch anything,<span class="line2">right now.</span></h1>
       <p>Pick a section from the sidebar and hit play. That's it.</p>
-      <div class="home-search-wrap">
-        <div class="home-search-bar">
-          <input type="text" id="homeSearchInput" placeholder="Search movies & TV shows…" onkeydown="if(event.key==='Enter')doHomeSearch()" />
-          <button onclick="doHomeSearch()"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
-        </div>
-        <div class="search-history" id="searchHistory"></div>
-      </div>
-    </div>
-    <div class="home-search-results" id="homeSearchResults" style="display:none;">
-      <div class="section-header">
-        <div class="pulse-dot"></div>
-        <span class="section-label" id="homeSearchLabel">Results</span>
-        <div class="section-line"></div>
-        <button type="button" class="clear-btn" onclick="clearHomeSearch()"><span class="cb-x">&#10005;</span> Clear</button>
-      </div>
-      <div id="homeSearchGrid" class="results-grid"></div>
-      <div id="homeSearchMsg" class="state-msg" style="display:none;"></div>
-      <div id="homeSearchPagination" class="pagination" style="display:none;"></div>
     </div>
     <div class="content-section" id="home-continue-wrap" style="display:none;">
       <div class="section-header">
@@ -135,17 +111,38 @@
     </div>
   </div>
 
+  <!-- SEARCH -->
+  <div class="page" id="page-search">
+    <div class="topbar">
+      <span class="topbar-title">Search</span>
+    </div>
+    <div class="search-page-content">
+      <div class="search-hero">
+        <div class="search-page-bar">
+          <span class="search-page-bar-icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+          <input type="text" id="searchInput" placeholder="Search movies & TV shows…" autocomplete="off" />
+          <button type="button" id="searchBtn"><span>Search</span></button>
+        </div>
+        <div class="recent-search" id="searchPageRecent"></div>
+      </div>
+      <div class="search-results" id="searchPageResults">
+        <div id="searchFeatured"></div>
+        <div class="section-header">
+          <div class="pulse-dot"></div>
+          <span class="section-label" id="searchResultsLabel">Results</span>
+          <div class="section-line"></div>
+        </div>
+        <div id="searchGrid" class="results-grid"></div>
+        <div id="searchMsg" class="state-msg" style="display:none;"></div>
+        <div id="searchPagination" class="pagination" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- MOVIES -->
   <div class="page" id="page-movies">
     <div class="topbar">
       <span class="topbar-title">Movies</span>
-      <div class="search-bar-wrap">
-        <div class="search-bar">
-          <input type="text" id="movieSearch" placeholder="Search movies..." onkeydown="if(event.key==='Enter')doSearch('movie')" autocomplete="off" />
-          <button onclick="doSearch('movie')">Search</button>
-        </div>
-        <div class="search-history" id="movieSearchHistory"></div>
-      </div>
     </div>
     <div class="content-section">
       <div class="section-header">
@@ -163,13 +160,6 @@
   <div class="page" id="page-tv">
     <div class="topbar">
       <span class="topbar-title">TV Shows</span>
-      <div class="search-bar-wrap">
-        <div class="search-bar">
-          <input type="text" id="tvSearch" placeholder="Search TV shows..." onkeydown="if(event.key==='Enter')doSearch('tv')" autocomplete="off" />
-          <button onclick="doSearch('tv')">Search</button>
-        </div>
-        <div class="search-history" id="tvSearchHistory"></div>
-      </div>
     </div>
     <div class="content-section">
       <div class="section-header">
