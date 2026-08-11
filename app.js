@@ -211,6 +211,7 @@ function showShortcutModal(){
       <div class="shortcut-row"><span>Toggle Sidebar</span><div class="shortcut-keys"><span class="shortcut-key">M</span></div></div>
       <div class="shortcut-row"><span>Fullscreen Player</span><div class="shortcut-keys"><span class="shortcut-key">F</span></div></div>
       <div class="shortcut-row"><span>Go Back</span><div class="shortcut-keys"><span class="shortcut-key">Esc</span></div></div>
+      <div class="shortcut-row"><span>Carousel</span><div class="shortcut-keys"><span class="shortcut-key">←</span><span class="shortcut-key">→</span></div></div>
       <button class="shortcut-modal-close">Close</button>
     </div>`;
   backdrop.querySelector('.shortcut-modal-close').addEventListener('click',()=>backdrop.remove());
@@ -258,6 +259,21 @@ async function fetchJSON(url){
   const r=await fetch(apiUrl);
   if(!r.ok)throw new Error('Request failed: '+r.status);
   return r.json();
+}
+
+// ============ CACHED TRENDING DATA ============
+// Homepage rows and the hero carousel both need trending data. Fetching once
+// and sharing the promise keeps a single request for each endpoint.
+const trendingCache={movie:null,tv:null};
+const trendingPromises={movie:null,tv:null};
+function getTrending(tmdbType){
+  if(trendingCache[tmdbType])return Promise.resolve(trendingCache[tmdbType]);
+  if(!trendingPromises[tmdbType]){
+    trendingPromises[tmdbType]=fetchJSON(`https://api.themoviedb.org/3/trending/${tmdbType}/week?api_key=x&page=1`)
+      .then(data=>{trendingCache[tmdbType]=data;return data;})
+      .catch(err=>{trendingPromises[tmdbType]=null;throw err;});
+  }
+  return trendingPromises[tmdbType];
 }
 
 // ============ CACHED TV DETAILS FOR HOVER ============
@@ -315,6 +331,7 @@ function switchPage(page){
   if(page==='player'){window.scrollTo(0,0);}
   else{const pos=savedScroll[page];window.scrollTo(0,pos!=null?pos:0);}
   handleBackToTop();
+  if(page==='home')heroCarousel.startTimer();else heroCarousel.stopTimer();
 }
 
 function goBack(){switchPage(previousPage);}
@@ -350,7 +367,7 @@ async function loadHomeTrendingRow(tmdbType,containerId){
   renderSkeletons(containerId,14);
   const appType=tmdbType==='movie'?'movie':'tv';
   try{
-    const data=await fetchJSON(`https://api.themoviedb.org/3/trending/${tmdbType}/week?api_key=x&page=1`);
+    const data=await getTrending(tmdbType);
     const items=(data.results||[]).filter(notAdult).slice(0,14);
     const el=document.getElementById(containerId);
     el.innerHTML='';
@@ -366,6 +383,246 @@ async function loadHomeTrendingRow(tmdbType,containerId){
     if(el)el.innerHTML='<div style="color:var(--muted);font-size:0.8rem;padding:1rem;">Failed to load.</div>';
   }
 }
+
+// ============ HERO FEATURED CAROUSEL ============
+// A cinematic, auto-rotating featured carousel that showcases the most
+// relevant trending movies and TV shows. Reuses the trending cache and the
+// shared detail cache so it never issues duplicate requests. Rotation pauses
+// on hover, touch, page-hide and reduced-motion; all timers are cleaned up so
+// nothing leaks when the user leaves the homepage.
+const heroCarousel={
+  INTERVAL:6500,
+  slides:[],
+  index:0,
+  timer:null,
+  hovered:false,
+  reducedMotion:false,
+  touch:{x:null,y:null},
+  els:{},
+  init(){
+    this.els.carousel=document.getElementById('heroCarousel');
+    if(!this.els.carousel)return;
+    this.els.slides=document.getElementById('heroSlides');
+    this.els.dots=document.getElementById('heroDots');
+    this.els.prev=document.getElementById('heroPrevBtn');
+    this.els.next=document.getElementById('heroNextBtn');
+    this.reducedMotion=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.els.prev.addEventListener('click',()=>this.goto(this.index-1));
+    this.els.next.addEventListener('click',()=>this.goto(this.index+1));
+    this.els.carousel.addEventListener('mouseenter',()=>{this.hovered=true;this.stopTimer();});
+    this.els.carousel.addEventListener('mouseleave',()=>{this.hovered=false;this.startTimer();});
+    this.els.carousel.addEventListener('touchstart',(e)=>{
+      const t=e.touches[0];this.touch={x:t.clientX,y:t.clientY};this.stopTimer();
+    },{passive:true});
+    this.els.carousel.addEventListener('touchend',(e)=>{
+      if(this.touch.x==null)return;
+      const t=e.changedTouches[0];
+      const dx=t.clientX-this.touch.x;
+      const dy=t.clientY-this.touch.y;
+      this.touch={x:null,y:null};
+      if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>40){this.goto(this.index+(dx<0?1:-1));}
+      else this.startTimer();
+    },{passive:true});
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)this.stopTimer();else this.startTimer();});
+    document.addEventListener('keydown',e=>this.onKey(e));
+    this.els.slides.addEventListener('click',e=>this.onSlideClick(e));
+  },
+  onKey(e){
+    if(currentPage!=='home')return;
+    if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;
+    const t=e.target;
+    if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'))return;
+    if(t&&t.classList&&(t.classList.contains('card')||t.classList.contains('recent-search-row')))return;
+    e.preventDefault();
+    this.goto(this.index+(e.key==='ArrowRight'?1:-1));
+  },
+  onSlideClick(e){
+    const wlBtn=e.target.closest('.hero-wl');
+    if(wlBtn){
+      const s=this.slideFromEl(wlBtn);
+      if(!s)return;
+      const inList=isInWatchlist(s.item.id);
+      toggleWatchlistItem({...s.item,type:s.type});
+      const now=isInWatchlist(s.item.id);
+      wlBtn.classList.toggle('in-list',now);
+      wlBtn.innerHTML=`<span class="wl-icon"></span> ${now?'In Watchlist':'Add to Watchlist'}`;
+      showToast(now?'Added to Watchlist':'Removed from Watchlist',now?'wl-added':'wl-removed');
+      return;
+    }
+    const playBtn=e.target.closest('.hero-play');
+    if(playBtn){
+      const s=this.slideFromEl(playBtn);
+      if(s)selectItem({...s.item,_homeType:s.type},s.type,null);
+    }
+  },
+  slideFromEl(btn){
+    const slide=btn.closest('.hero-slide');
+    const idx=[].indexOf.call(this.els.slides.children,slide);
+    return idx>=0?this.slides[idx]:null;
+  },
+  async load(){
+    if(!this.els.carousel)return;
+    let data;
+    try{
+      data=await Promise.all([getTrending('movie'),getTrending('tv')]);
+    }catch(e){
+      this.els.carousel.style.display='none';
+      return;
+    }
+    const movieData=data[0],showData=data[1];
+    const movies=(movieData.results||[]).filter(x=>notAdult(x)&&(x.backdrop_path||x.poster_path)&&(x.overview||'').trim()).slice(0,6);
+    const shows=(showData.results||[]).filter(x=>notAdult(x)&&(x.backdrop_path||x.poster_path)&&(x.overview||'').trim()).slice(0,6);
+    const inter=[];
+    const len=Math.max(movies.length,shows.length);
+    for(let i=0;i<len;i++){if(i<movies.length)inter.push({item:movies[i],type:'movie'});if(i<shows.length)inter.push({item:shows[i],type:'tv'});}
+    const chosen=inter.slice(0,8);
+    if(!chosen.length){this.els.carousel.style.display='none';return;}
+    this.slides=chosen.map(({item,type})=>({
+      item,type,
+      title:item.title||item.name||'',
+      year:(item.release_date||item.first_air_date||item.year||'').slice(0,4),
+      rating:Number(item.vote_average)||0,
+      overview:item.overview||'',
+      genres:[],runtime:null,seasons:null,
+      backdrop:item.backdrop_path?IMG_BG+item.backdrop_path:null,
+      poster:item.poster_path?IMG+item.poster_path:null,
+      el:null
+    }));
+    this.render();
+    this.goto(0);
+    this.startTimer();
+  },
+  render(){
+    const wrap=this.els.slides;
+    wrap.innerHTML='';
+    this.slides.forEach((s,i)=>{
+      const slide=document.createElement('div');
+      slide.className='hero-slide';
+      slide.setAttribute('role','group');
+      slide.setAttribute('aria-roledescription','slide');
+      slide.setAttribute('aria-label','Slide '+(i+1)+' of '+this.slides.length);
+      slide.setAttribute('aria-hidden','true');
+      slide.innerHTML=this.slideHtml(s);
+      s.el=slide;
+      wrap.appendChild(slide);
+    });
+    this.renderDots();
+    this.preload(0);
+  },
+  slideHtml(s){
+    const typeLabel=s.type==='movie'?'Movie':'TV Show';
+    const bits=[];
+    if(s.year)bits.push(`<span>${sanitize(s.year)}</span>`);
+    if(s.rating>0)bits.push(`<span class="hero-rating"><i class="fa-solid fa-star"></i> ${s.rating.toFixed(1)}</span>`);
+    if(s.type==='movie'&&s.runtime)bits.push(`<span>${s.runtime} min</span>`);
+    if(s.type==='tv'&&s.seasons)bits.push(`<span>${s.seasons} Season${s.seasons>1?'s':''}</span>`);
+    const metaHtml=bits.length?`<div class="hero-meta">${bits.join('<span class="hero-meta-sep">&bull;</span>')}</div>`:'';
+    const img=s.backdrop||s.poster;
+    const inList=isInWatchlist(s.item.id);
+    return `
+      <div class="hero-slide-bg" style="background-image:url('${img}')"></div>
+      <div class="hero-shade"></div>
+      <div class="hero-slide-content">
+        <div class="hero-info">
+          <span class="featured-type">${typeLabel}</span>
+          <h2 class="hero-title">${sanitize(s.title)}</h2>
+          ${metaHtml}
+          <div class="hero-genres"></div>
+          <p class="hero-overview">${sanitize(s.overview)}</p>
+        </div>
+        <div class="hero-actions">
+          <button type="button" class="featured-play hero-play"><i class="fa-solid fa-play"></i> Watch Now</button>
+          <button type="button" class="wl-btn hero-wl ${inList?'in-list':''}"><span class="wl-icon"></span> ${inList?'In Watchlist':'Add to Watchlist'}</button>
+        </div>
+      </div>`;
+  },
+  renderDots(){
+    const dots=this.els.dots;
+    dots.innerHTML='';
+    this.slides.forEach((s,i)=>{
+      const dot=document.createElement('button');
+      dot.type='button';
+      dot.className='hero-dot'+(i===this.index?' active':'');
+      dot.setAttribute('role','tab');
+      dot.setAttribute('aria-selected',String(i===this.index));
+      dot.setAttribute('aria-label','Go to slide '+(i+1));
+      dot.addEventListener('click',()=>this.goto(i));
+      dots.appendChild(dot);
+    });
+  },
+  updateDots(){
+    const dots=this.els.dots.querySelectorAll('.hero-dot');
+    dots.forEach((d,i)=>{const on=i===this.index;d.classList.toggle('active',on);d.setAttribute('aria-selected',String(on));});
+  },
+  goto(i){
+    const total=this.slides.length;
+    if(!total)return;
+    i=((i%total)+total)%total;
+    this.index=i;
+    this.slides.forEach((s,idx)=>{
+      const on=idx===i;
+      s.el.classList.toggle('active',on);
+      s.el.setAttribute('aria-hidden',String(!on));
+    });
+    this.updateDots();
+    this.preload(i);
+    this.fillDetails(this.slides[i]);
+    this.restartTimer();
+  },
+  preload(i){
+    const total=this.slides.length;
+    for(let k=1;k<=2;k++){
+      const s=this.slides[(i+k)%total];
+      if(!s||s._preloaded)continue;
+      const url=s.backdrop||s.poster;
+      if(!url)continue;
+      s._preloaded=true;
+      const im=new Image();
+      im.src=url;
+    }
+  },
+  async fillDetails(s){
+    if(!s||s._detailsLoaded||s._detailsLoading)return;
+    s._detailsLoading=true;
+    let details=null;
+    try{details=await loadFeaturedDetails(s.item,s.type);}catch(e){details=null;}
+    s._detailsLoading=false;
+    if(!details)return;
+    s._detailsLoaded=true;
+    if(!s.genres.length&&Array.isArray(details.genres))s.genres=details.genres.map(g=>g&&g.name?g.name:'').filter(Boolean);
+    if(s.type==='movie'&&details.runtime)s.runtime=details.runtime;
+    if(s.type==='tv'&&details.number_of_seasons)s.seasons=details.number_of_seasons;
+    if(!s.backdrop&&details.backdrop_path)s.backdrop=IMG_BG+details.backdrop_path;
+    if(!s.overview&&details.overview)s.overview=details.overview;
+    this.renderInfo(s);
+  },
+  renderInfo(s){
+    const el=s.el;
+    if(!el)return;
+    const bits=[];
+    if(s.year)bits.push(`<span>${sanitize(s.year)}</span>`);
+    if(s.rating>0)bits.push(`<span class="hero-rating"><i class="fa-solid fa-star"></i> ${s.rating.toFixed(1)}</span>`);
+    if(s.type==='movie'&&s.runtime)bits.push(`<span>${s.runtime} min</span>`);
+    if(s.type==='tv'&&s.seasons)bits.push(`<span>${s.seasons} Season${s.seasons>1?'s':''}</span>`);
+    const metaEl=el.querySelector('.hero-meta');
+    if(metaEl)metaEl.innerHTML=bits.length?bits.join('<span class="hero-meta-sep">&bull;</span>'):'';
+    const genresEl=el.querySelector('.hero-genres');
+    if(genresEl)genresEl.innerHTML=s.genres.length?s.genres.map(g=>`<span class="featured-tag hero-genre">${sanitize(g)}</span>`).join(''):'';
+    const ovEl=el.querySelector('.hero-overview');
+    if(ovEl&&s.overview)ovEl.textContent=s.overview;
+    const bg=el.querySelector('.hero-slide-bg');
+    if(bg&&s.backdrop&&!bg.getAttribute('data-final')){bg.style.backgroundImage=`url('${s.backdrop}')`;bg.setAttribute('data-final','1');}
+  },
+  startTimer(){this.hovered=false;this.restartTimer();},
+  stopTimer(){clearTimeout(this.timer);this.timer=null;},
+  restartTimer(){
+    this.stopTimer();
+    if(this.hovered||this.reducedMotion)return;
+    if(currentPage!=='home'||document.hidden)return;
+    if(!this.slides.length)return;
+    this.timer=setTimeout(()=>this.goto(this.index+1),this.INTERVAL);
+  }
+};
 
 // ============ SEARCH PAGE ============
 function pickFeatured(items){
@@ -493,7 +750,7 @@ async function loadSearchResults(page){
   }catch(err){
     searchPage.loading=false;
     if(seq!==searchRequestSeq)return;
-    console.error('[screenify] search failed',err);
+    console.error('[ystream] search failed',err);
     gridEl.innerHTML='';featuredEl.innerHTML='';
     msgEl.style.display='block';msgEl.textContent='Something went wrong. Please try again.';
     labelEl.textContent='"'+sanitize(searchPage.query)+'"';
@@ -608,11 +865,11 @@ async function loadPage(type,page){
       try{
         const d2=await fetchJSON(mkUrl(page+1));
         items=items.concat((d2.results||[]).filter(notAdult).slice(0,needed));
-      }catch(err){console.warn('[screenify] second page fetch failed (optional), using page 1 alone',err);}
+      }catch(err){console.warn('[ystream] second page fetch failed (optional), using page 1 alone',err);}
     }
     s.page=page;
   }catch(err){
-    console.error('[screenify] load failed',err);
+    console.error('[ystream] load failed',err);
     gridEl.innerHTML='';msgEl.style.display='block';msgEl.textContent='Something went wrong. Please try again.';
     s.loading=false;return;
   }
@@ -1124,6 +1381,8 @@ function setupKeyboardShortcuts(){
   loadHomeTrendingRow('tv','home-tvRow');
   renderRecentSearches();
   setupSearchEvents();
+  heroCarousel.init();
+  heroCarousel.load();
   const hq=readSearchHash();
   if(hq!==null){
     searchPage.query=hq;

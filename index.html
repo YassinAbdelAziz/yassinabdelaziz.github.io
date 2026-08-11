@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<meta name="description" content="Screenify — stream movies and TV shows. Search titles, build a watchlist and pick up right where you left off." />
+<meta name="description" content="YStream — stream movies and TV shows. Search titles, build a watchlist and pick up right where you left off." />
 <meta name="theme-color" content="#0f0f0f" />
 <meta name="referrer" content="no-referrer" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; object-src 'none'; base-uri 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://screenify-worker.yassinmovies.workers.dev;" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E%F0%9F%8E%AC%3C/text%3E%3C/svg%3E" />
-<meta property="og:title" content="Screenify" />
+<meta property="og:title" content="YStream" />
 <meta property="og:type" content="website" />
 <meta property="og:description" content="Stream movies and TV shows, build a watchlist and keep watching." />
-<title>Screenify</title>
+<title>YStream</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
@@ -22,7 +22,7 @@
 
 <div class="mob-topbar" id="mobTopbar">
   <div class="mob-topbar-row1">
-    <div class="mob-logo">Screen<em>ify</em></div>
+    <div class="mob-logo"><em>y</em>Stream</div>
     <div class="mob-topbar-right">
       <span class="mob-page-title" id="mobPageTitle"></span>
       <button class="mob-menu-btn" onclick="toggleMobMenu()" aria-label="Toggle menu">&#9776;</button>
@@ -34,7 +34,7 @@
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-logo">
     <div class="sidebar-logo-inner">
-      <span class="sidebar-logo-text">Screen<em>ify</em></span>
+      <span class="sidebar-logo-text"><em>y</em>Stream</span>
     </div>
     <button class="sidebar-toggle" id="sidebarToggleBtn" onclick="toggleSidebar()" title="Collapse sidebar" aria-label="Collapse sidebar"><i class="fa-solid fa-chevron-left"></i></button>
   </div>
@@ -73,9 +73,11 @@
 
   <!-- HOME -->
   <div class="page active" id="page-home">
-    <div class="home-hero">
-      <h1>Watch anything,<span class="line2">right now.</span></h1>
-      <p>Pick a section from the sidebar and hit play. That's it.</p>
+    <div class="hero-carousel" id="heroCarousel" role="region" aria-roledescription="carousel" aria-label="Featured titles" tabindex="0">
+      <div class="hero-slides" id="heroSlides"></div>
+      <button type="button" class="hero-nav hero-nav-prev" id="heroPrevBtn" title="Previous title" aria-label="Previous title"><i class="fa-solid fa-chevron-left"></i></button>
+      <button type="button" class="hero-nav hero-nav-next" id="heroNextBtn" title="Next title" aria-label="Next title"><i class="fa-solid fa-chevron-right"></i></button>
+      <div class="hero-dots" id="heroDots" role="tablist" aria-label="Featured titles"></div>
     </div>
     <div class="content-section" id="home-continue-wrap" style="display:none;">
       <div class="section-header">
