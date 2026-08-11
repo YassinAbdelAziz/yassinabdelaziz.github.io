@@ -121,22 +121,32 @@ function renderRecentSearches(){
   if(!el)return;
   const input=document.getElementById('searchInput');
   const all=getSearchHistory();
-  const current=input?input.value:'';
-  const t=current.trim().toLowerCase();
-  const list=t?all.filter(x=>x.toLowerCase().startsWith(t)):all;
+  const t=(input?input.value:'').trim().toLowerCase();
+  let list=all.slice();
+  let matched=null;
+  if(t){
+    const idx=list.findIndex(q=>q.trim().toLowerCase()===t);
+    if(idx>=0){
+      matched=list[idx];
+      if(idx>0){
+        list.splice(idx,1);
+        list.unshift(matched);
+      }
+    }
+  }
   const shown=list.slice(0,MAX_HISTORY_SHOWN);
   el.innerHTML='';
   if(!shown.length){
     const empty=document.createElement('div');
     empty.className='recent-search-empty';
-    empty.textContent=t?'No matching recent searches.':'Your recent searches will appear here.';
+    empty.textContent='Your recent searches will appear here.';
     el.appendChild(empty);
     return;
   }
   const head=document.createElement('div');
   head.className='recent-search-head';
   const label=document.createElement('span');
-  label.textContent=t?'Matching searches':'Recent searches';
+  label.textContent='Recent searches';
   head.appendChild(label);
   const clearBtn=document.createElement('button');
   clearBtn.type='button';
@@ -151,7 +161,7 @@ function renderRecentSearches(){
     const row=document.createElement('div');
     row.className='recent-search-row';
     row.setAttribute('role','button');row.setAttribute('tabindex','0');
-    row.innerHTML='<span class="recent-search-icon"><i class="fa-solid fa-clock-rotate-left"></i></span><span class="recent-search-text"></span><button type="button" class="recent-search-del" title="Remove from history" aria-label="Remove from history">&#10005;</button>';
+    row.innerHTML='<span class="recent-search-icon"><i class="fa-solid fa-clock-rotate-left"></i></span><span class="recent-search-text"></span>'+(q===matched?'<span class="recent-search-match">Recent matching search</span>':'')+'<button type="button" class="recent-search-del" title="Remove from history" aria-label="Remove from history">&#10005;</button>';
     row.querySelector('.recent-search-text').textContent=q;
     const pick=()=>{if(input)input.value=q;performSearch(q);};
     row.addEventListener('click',pick);
@@ -164,14 +174,28 @@ function renderRecentSearches(){
     el.appendChild(row);
   });
 }
+function openRecentPanel(){const el=document.getElementById('searchPageRecent');if(el)el.classList.add('open');}
+function closeRecentPanel(){const el=document.getElementById('searchPageRecent');if(el)el.classList.remove('open');}
 function setupSearchEvents(){
   const input=document.getElementById('searchInput');
   if(!input)return;
-  input.addEventListener('input',renderRecentSearches);
-  input.addEventListener('focus',renderRecentSearches);
-  input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();performSearch();}});
+  const hero=document.querySelector('.search-hero');
+  input.addEventListener('input',()=>{renderRecentSearches();openRecentPanel();});
+  input.addEventListener('focus',()=>{renderRecentSearches();openRecentPanel();});
+  input.addEventListener('blur',(e)=>{
+    const rt=e.relatedTarget;
+    if(rt&&hero&&!hero.contains(rt))closeRecentPanel();
+  });
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();closeRecentPanel();performSearch();}});
+  const bar=document.querySelector('.search-page-bar');
+  if(bar)bar.addEventListener('click',(e)=>{if(e.target.closest('button'))return;input.focus();});
   const btn=document.getElementById('searchBtn');
-  if(btn)btn.addEventListener('click',()=>performSearch());
+  if(btn)btn.addEventListener('click',()=>{closeRecentPanel();performSearch();});
+  document.addEventListener('click',(e)=>{
+    if(!hero)return;
+    if(hero.contains(e.target))return;
+    closeRecentPanel();
+  });
 }
 
 // ============ SHORTCUT MODAL ============
@@ -212,14 +236,16 @@ function handleBackToTop() {
 }
 window.addEventListener('scroll', handleBackToTop, {passive:true});
 
-// ============ TOPBAR SCROLL SHRINK ============
-function handleTopbarShrink() {
-  const scrollY = window.scrollY || document.documentElement.scrollTop;
-  document.querySelectorAll('.topbar').forEach(tb => {
-    if (scrollY > 20) tb.classList.add('scrolled'); else tb.classList.remove('scrolled');
-  });
+// ============ SCROLL LOCK ============
+// While the page is being scrolled, keep cards from lifting on hover so the
+// grid stays visually stable under the cursor.
+let scrollLockTimer=null;
+function handleScrollLock() {
+  document.body.classList.add('is-scrolling');
+  clearTimeout(scrollLockTimer);
+  scrollLockTimer=setTimeout(()=>document.body.classList.remove('is-scrolling'),120);
 }
-window.addEventListener('scroll', handleTopbarShrink, {passive:true});
+window.addEventListener('scroll', handleScrollLock, {passive:true});
 
 // ============ API FETCH ============
 async function fetchJSON(url){
@@ -427,6 +453,7 @@ async function performSearch(explicitQuery){
   const q=(explicitQuery!==undefined?explicitQuery:(input?input.value:'')).trim();
   if(input)input.value=q;
   if(!q){resetSearchResults();return;}
+  closeRecentPanel();
   searchPage.query=q;searchPage.page=1;
   addToSearchHistory(q);
   await loadSearchResults(1);
