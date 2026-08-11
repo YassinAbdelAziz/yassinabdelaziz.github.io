@@ -126,11 +126,18 @@ function renderRecentSearches(){
   let matched=null;
   if(t){
     const idx=list.findIndex(q=>q.trim().toLowerCase()===t);
-    if(idx>=0){
-      matched=list[idx];
-      if(idx>0){
-        list.splice(idx,1);
-        list.unshift(matched);
+    if(idx>=0)matched=list[idx];
+    // Only promote a history entry to the top when the typed input matches
+    // exactly one entry across the whole 100-item history. A plain 1:1 match
+    // with the input is not enough on its own — the entry still has to be the
+    // single matching result.
+    const exactMatches=list.filter(q=>q.trim().toLowerCase().includes(t));
+    if(exactMatches.length===1){
+      const single=exactMatches[0];
+      const at=list.indexOf(single);
+      if(at>0){
+        list.splice(at,1);
+        list.unshift(single);
       }
     }
   }
@@ -294,6 +301,21 @@ async function getTVDetails(id){
 // (i) info button. Country preference favours US, then other English-language
 // markets, falling back to whichever country has data.
 const ratingCache={};
+// Ratings are always surfaced in numeric form (e.g. "3+", "7+", "13+", "17+",
+// "18+"). Letter-based certifications are mapped to their closest numeric age;
+// certifications that are already numeric keep their number.
+const AGE_RATING_MAP={
+  'g':'3+','u':'3+','uall':'3+','all':'3+','allages':'3+','universal':'3+','general':'3+','tvy':'3+','tvg':'3+','0':'0+','0+':'0+',
+  'pg':'7+','tvy7':'7+','tvy7fv':'7+','7a':'7+','7ap':'7+','7a7ap':'7+','6':'6+','6+':'6+','7':'7+','7+':'7+',
+  'pg13':'13+','tv14':'13+','12':'12+','12a':'12+','12+':'12+','13':'13+','13+':'13+','14':'14+','14+':'14+','vm14':'14+','dgf':'14+',
+  'r':'17+','tvma':'17+','15':'15+','15a':'15+','15+':'15+','16':'16+','16+':'16+','17':'17+','17+':'17+','m':'15+','ma15':'17+','ma15+':'17+',
+  'nc17':'18+','x':'18+','ao':'18+','18':'18+','18+':'18+','18a':'18+','18r':'18+','r18':'18+','r18+':'18+'
+};
+function toNumericAgeRating(label){
+  if(!label)return label;
+  const key=String(label).trim().toLowerCase().replace(/[^a-z0-9+]/g,'');
+  return AGE_RATING_MAP[key]||label;
+}
 function resolveMovieCert(data){
   const results=data.results||[];
   const preferred=['US','GB','CA','AU','IE','NZ','FR','DE','ES','IT','NL','SE','NO','DK','MX','BR','IN'];
@@ -360,11 +382,12 @@ const ratingReasons=new Map();
 function ratingInfoHtml(cert,extra){
   if(!cert||!cert.label)return '';
   const cls=extra?' cert-'+extra:'';
+  const label=toNumericAgeRating(cert.label);
   const reason=(cert.reason||'').trim();
-  if(!reason)return`<span class="cert-badge${cls}">${sanitize(cert.label)}</span>`;
+  if(!reason)return`<span class="cert-badge${cls}">${sanitize(label)}</span>`;
   const rid=++ratingSeq;
-  ratingReasons.set(rid,{label:cert.label,reason});
-  return`<span class="cert-badge${cls}">${sanitize(cert.label)}<button type="button" class="rating-info-btn" data-rid="${rid}" aria-label="Why is this ${sanitize(cert.label)}?" title="Why is this ${sanitize(cert.label)}?"><i class="fa-solid fa-circle-info"></i></button></span>`;
+  ratingReasons.set(rid,{label,reason});
+  return`<span class="cert-badge${cls}">${sanitize(label)}<button type="button" class="rating-info-btn" data-rid="${rid}" aria-label="Why is this ${sanitize(label)}?" title="Why is this ${sanitize(label)}?"><i class="fa-solid fa-circle-info"></i></button></span>`;
 }
 let ratingPopEl=null;
 function showRatingPopover(btn){
@@ -471,7 +494,7 @@ function switchPage(page){
   if(page==='tv'&&!document.getElementById('tvGrid').children.length)loadPage('tv',1);
   if(page==='watchlist')renderWatchlistPage();
   if(page==='continue')renderContinuePage();
-  if(page==='home'){renderHomeContinue();renderHomeWatchlist();}
+  if(page==='home'){renderHomeContinue();}
   if(page==='player'){window.scrollTo(0,0);}
   else{const pos=savedScroll[page];window.scrollTo(0,pos!=null?pos:0);}
   handleBackToTop();
@@ -546,7 +569,7 @@ function initRowNav(){
 }
 function scrollRowBy(row,dir){
   if(!row)return;
-  row.scrollBy({left:dir*Math.max(1,row.clientWidth*0.9),behavior:'smooth'});
+  row.scrollBy({left:dir*Math.max(1,row.clientWidth),behavior:'smooth'});
 }
 function updateRowNav(row,prev,next){
   if(!row)return;
@@ -830,11 +853,6 @@ const heroCarousel={
     const bg=el.querySelector('.hero-slide-bg');
     if(bg&&s.backdrop&&!bg.getAttribute('data-final')){bg.style.backgroundImage=`url('${s.backdrop}')`;bg.setAttribute('data-final','1');}
   },
-  nextAutoDir(){
-    const d=this._autoDir||'next';
-    this._autoDir=d==='next'?'prev':'next';
-    return d;
-  },
   startTimer(){this.hovered=false;this.restartTimer();},
   stopTimer(){clearTimeout(this.timer);this.timer=null;},
   restartTimer(){
@@ -842,7 +860,7 @@ const heroCarousel={
     if(this.hovered||this.reducedMotion)return;
     if(currentPage!=='home'||document.hidden)return;
     if(!this.slides.length)return;
-    this.timer=setTimeout(()=>this.goto(this.index+1,this.nextAutoDir()),this.INTERVAL);
+    this.timer=setTimeout(()=>this.goto(this.index+1),this.INTERVAL);
   }
 };
 
@@ -1129,7 +1147,10 @@ function makeCard(item,type,opts={}){
     ${pct!==null?`<div class="card-progress"><div class="card-progress-fill" style="width:${pct}%"></div></div>`:''}
     ${resume?`<div class="card-resume">${sanitize(resume.label)}</div>`:''}
     <div class="card-hover-overlay">
-      <div class="hover-rating">${rating?'&#9733; '+rating:''}</div>
+      <div class="hover-meta-line">
+        <span class="hover-rating">${rating?'&#9733; '+rating:''}</span>
+        <span class="hover-cert"></span>
+      </div>
       ${tvMeta}
       ${overview?`<div class="hover-synopsis">${sanitize(overview)}</div>`:''}
     </div>
@@ -1171,9 +1192,8 @@ function makeCard(item,type,opts={}){
 function attachCardCert(card,item,type){
   getAgeRating(item,type).then(cert=>{
     if(!cert||!cert.label||!card.isConnected)return;
-    const existing=card.querySelector('.card-cert');
-    if(existing){existing.outerHTML=ratingInfoHtml(cert,'card');return;}
-    card.insertAdjacentHTML('beforeend',ratingInfoHtml(cert,'card'));
+    const slot=card.querySelector('.hover-cert');
+    if(slot)slot.innerHTML=ratingInfoHtml(cert);
   });
 }
 
@@ -1200,8 +1220,14 @@ async function selectItem(item,type,cardEl){
     ${poster?`<img class="player-poster" src="${poster}" alt="${sanitize(title)}"/>`:''}
     <div class="player-info">
       <h2>${sanitize(title)}</h2>
-      <span class="meta-sub" id="playerMetaSub">${year}${rating?` &middot; &#9733; ${rating}`:''}</span>
-      <p class="player-overview" id="playerOverview">${sanitize(overview)||'<span style="opacity:0.35">Loading…</span>'}</p>
+      <div class="player-details">
+        <p class="player-overview" id="playerOverview">${sanitize(overview)||'<span style="opacity:0.35">Loading…</span>'}</p>
+        <div class="player-meta-col">
+          ${year?`<span class="player-meta-item">${sanitize(year)}</span>`:''}
+          ${rating?`<span class="player-meta-item"><i class="fa-solid fa-star"></i> ${rating}</span>`:''}
+          <span class="player-meta-item" id="playerMetaCert"></span>
+        </div>
+      </div>
       <button class="wl-btn ${isInWatchlist(item.id)?'in-list':''}" onclick="toggleWatchlistFromPlayer('${type}')">
         <span class="wl-icon"></span> ${isInWatchlist(item.id)?'In Watchlist':'Add to Watchlist'}
       </button>
@@ -1218,8 +1244,10 @@ async function selectItem(item,type,cardEl){
     </div>`;
   switchPage('player');
   getAgeRating(item,type).then(cert=>{
-    const sub=document.getElementById('playerMetaSub');
-    if(sub&&cert&&cert.label)sub.insertAdjacentHTML('beforeend',' &middot; '+ratingInfoHtml(cert));
+    const el=document.getElementById('playerMetaCert');
+    if(!el)return;
+    if(cert&&cert.label){el.innerHTML=ratingInfoHtml(cert,'player');return;}
+    if(!el.innerHTML.trim()&&!el.previousElementSibling&&!el.nextElementSibling)el.parentElement.remove();
   });
   const frame=document.getElementById('playerFrame');
   frame.style.opacity='0.5';frame.style.transition='opacity 0.3s ease';
@@ -1297,6 +1325,7 @@ async function loadMoreLikeThis(item,type){
       card.style.scrollSnapAlign='start';
       row.appendChild(card);
     });
+    refreshRowNavFor(row);
     label.textContent=`More Like "${item.title||item.name}"`;
   }catch(e){section.style.display='none';}
 }
@@ -1435,21 +1464,6 @@ function toggleWatchlistItem(item){
   }
   saveWatchlist(list);
   if(currentPage==='watchlist')renderWatchlistPage();
-  if(currentPage==='home')renderHomeWatchlist();
-}
-function renderHomeWatchlist(){
-  const list=getWatchlist();
-  const wrap=document.getElementById('home-watchlist-wrap');
-  const grid=document.getElementById('home-watchlistGrid');
-  if(!list.length){wrap.style.display='none';return;}
-  wrap.style.display='block';grid.innerHTML='';
-  list.forEach(item=>{
-    const card=makeCard(item,item.type,{showWl:true});
-    card.style.flex='0 0 calc((100% - 6*14px)/7)';
-    card.style.minWidth='110px';card.style.scrollSnapAlign='start';
-    grid.appendChild(card);
-  });
-  refreshRowNavFor(grid);
 }
 function makeFeaturedCard(stored,mode){
   const type=stored.type||stored._homeType||'movie';
@@ -1532,7 +1546,6 @@ function makeFeaturedCard(stored,mode){
 function removeFromWatchlist(id){
   saveWatchlist(getWatchlist().filter(i=>i.id!==id));
   if(currentPage==='watchlist')renderWatchlistPage();
-  if(currentPage==='home')renderHomeWatchlist();
 }
 function renderWatchlistPage(){
   const list=getWatchlist();
@@ -1596,7 +1609,6 @@ window.addEventListener('message',(e)=>{
       saveResume(item.id,'movie',{currentTime,duration});
       if(currentTime>=300){saveContinueItem(item,'movie');renderHomeContinue();}
     }
-    if(currentPage==='home')renderHomeWatchlist();
     if(currentPage==='continue')renderContinuePage();
   }
 });
@@ -1623,7 +1635,7 @@ function setupKeyboardShortcuts(){
 }
 
 (function init(){
-  renderHomeContinue();renderHomeWatchlist();
+  renderHomeContinue();
   loadHomeTrendingRow('movie','home-moviesRow');
   loadHomeTrendingRow('tv','home-tvRow');
   initRowNav();

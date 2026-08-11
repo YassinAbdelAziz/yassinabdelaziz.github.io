@@ -203,15 +203,15 @@
   .cert-badge{display:inline-flex;align-items:center;gap:5px;background:rgba(0,0,0,0.72);border:1px solid rgba(255,255,255,0.14);color:var(--text);font-size:0.58rem;font-weight:600;letter-spacing:0.08em;padding:2px 8px;border-radius:4px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);white-space:nowrap;line-height:1.6;}
   .rating-info-btn{display:inline-flex;align-items:center;justify-content:center;border:none;background:transparent;color:inherit;padding:0;margin:0;width:14px;height:14px;cursor:pointer;font-size:0.64rem;line-height:1;border-radius:50%;opacity:0.75;transition:opacity 0.15s,color 0.15s;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
   .rating-info-btn:hover{opacity:1;color:var(--accent-lt);}
-  .card-cert{position:absolute;top:30px;left:8px;z-index:2;}
   .card-info{padding:9px 11px 10px;}
   .card-title{font-size:0.88rem;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .card-year{font-size:0.68rem;color:var(--muted2);margin-top:2px;}
   .card-hover-overlay{position:absolute;inset:0;background:rgba(0,0,0,0.87);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;opacity:0;transition:opacity 0.22s ease;pointer-events:none;text-align:center;gap:6px;}
   .card:hover .card-hover-overlay{opacity:1;}
   .card-hover-overlay .hover-rating{font-size:0.85rem;color:var(--accent);font-weight:600;}
+  .card-hover-overlay .hover-meta-line{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;}
   .card-hover-overlay .hover-meta{font-size:0.6rem;color:var(--muted2);letter-spacing:0.06em;text-transform:uppercase;}
-  .card-hover-overlay .hover-synopsis{font-size:0.62rem;color:#ccc;line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+  .card-hover-overlay .hover-synopsis{font-size:0.62rem;color:#ccc;line-height:1.5;display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;overflow:hidden;}
   .card-resume{position:absolute;bottom:42px;left:0;right:0;background:rgba(255,46,46,0.88);color:#fff;font-size:0.58rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;text-align:center;padding:3px 0;}
   .card-progress{position:absolute;bottom:42px;left:0;right:0;height:3px;background:rgba(255,255,255,0.1);}
   .card-progress-fill{height:100%;background:var(--accent);min-width:4px;}
@@ -260,7 +260,12 @@
   .player-poster{width:54px;height:81px;object-fit:cover;border-radius:6px;border:1px solid var(--border2);flex-shrink:0;}
   .player-info{flex:1;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
   .player-info h2{font-family:system-ui,-apple-system,sans-serif;font-size:1.4rem;font-weight:600;letter-spacing:-0.01em;line-height:1.2;width:100%;}
-  .meta-sub{font-size:0.72rem;color:var(--muted2);letter-spacing:0.07em;text-transform:uppercase;}
+  .player-details{display:flex;gap:20px;width:100%;align-items:flex-start;}
+  .player-details .player-overview{flex:1;width:auto;max-width:680px;margin-top:0;}
+  .player-meta-col{display:flex;flex-direction:column;align-items:flex-start;gap:7px;flex-shrink:0;min-width:90px;padding-top:2px;}
+  .player-meta-item{font-size:0.72rem;color:var(--muted2);letter-spacing:0.07em;text-transform:uppercase;display:inline-flex;align-items:center;gap:6px;line-height:1.5;}
+  .player-meta-item i{color:var(--accent);}
+  .player-meta-item .cert-badge{font-size:0.6rem;}
   .player-overview{font-size:0.83rem;color:var(--muted2);line-height:1.7;max-width:680px;width:100%;margin-top:4px;font-weight:300;}
   .wl-btn{display:inline-flex;align-items:center;gap:7px;padding:8px 20px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--muted2);font-family:'Inter',sans-serif;font-size:0.8rem;letter-spacing:0.04em;cursor:pointer;transition:all 0.2s;min-height:40px;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
   .wl-btn:hover{border-color:var(--accent);color:var(--accent);}
@@ -389,7 +394,8 @@
     .player-content{padding:1rem;}
     .player-meta{gap:10px;margin-bottom:1rem;}
     .player-info h2{font-size:1.05rem;}
-    .meta-sub{font-size:0.68rem;}
+    .player-details{flex-direction:column;gap:10px;}
+    .player-meta-item{font-size:0.68rem;}
     .wl-btn{font-size:0.75rem;padding:7px 14px;}
     .server-pill{font-size:0.75rem;padding:7px 14px;min-height:36px;gap:6px;}
     .server-pills{order:3;width:100%;margin-top:2px;}

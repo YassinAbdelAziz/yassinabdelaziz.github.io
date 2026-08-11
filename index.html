@@ -91,18 +91,6 @@
         <button type="button" class="row-nav row-nav-next" data-target="home-continueGrid" title="Scroll right" aria-label="Scroll right"><i class="fa-solid fa-chevron-right"></i></button>
       </div>
     </div>
-    <div class="content-section" id="home-watchlist-wrap" style="display:none;">
-      <div class="section-header">
-        <div class="pulse-dot" style="background:#888;animation:none;"></div>
-        <span class="section-label">My Watchlist</span>
-        <div class="section-line"></div>
-      </div>
-      <div class="scroll-row-wrap">
-        <button type="button" class="row-nav row-nav-prev" data-target="home-watchlistGrid" title="Scroll left" aria-label="Scroll left"><i class="fa-solid fa-chevron-left"></i></button>
-        <div id="home-watchlistGrid" class="scroll-row"></div>
-        <button type="button" class="row-nav row-nav-next" data-target="home-watchlistGrid" title="Scroll right" aria-label="Scroll right"><i class="fa-solid fa-chevron-right"></i></button>
-      </div>
-    </div>
     <div class="content-section">
       <div class="section-header">
         <div class="pulse-dot" style="background:var(--accent-lt);animation-delay:0.5s;"></div>
@@ -236,7 +224,11 @@
         <span class="section-label" id="moreLikeThisLabel">More Like This</span>
         <div class="section-line"></div>
       </div>
-      <div class="mlt-scroll" id="moreLikeThisRow"></div>
+      <div class="scroll-row-wrap">
+        <button type="button" class="row-nav row-nav-prev" data-target="moreLikeThisRow" title="Scroll left" aria-label="Scroll left"><i class="fa-solid fa-chevron-left"></i></button>
+        <div id="moreLikeThisRow" class="scroll-row mlt-scroll"></div>
+        <button type="button" class="row-nav row-nav-next" data-target="moreLikeThisRow" title="Scroll right" aria-label="Scroll right"><i class="fa-solid fa-chevron-right"></i></button>
+      </div>
     </div>
   </div>
 
