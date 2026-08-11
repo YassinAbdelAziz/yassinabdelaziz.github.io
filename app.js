@@ -288,6 +288,150 @@ async function getTVDetails(id){
   }catch{return{seasons:0,episodes:0};}
 }
 
+// ============ AGE RATINGS ============
+// Resolves a displayable age rating (certification) for movies and TV shows,
+// plus an optional human-readable reason (descriptors/advisory) that powers the
+// (i) info button. Country preference favours US, then other English-language
+// markets, falling back to whichever country has data.
+const ratingCache={};
+function resolveMovieCert(data){
+  const results=data.results||[];
+  const preferred=['US','GB','CA','AU','IE','NZ','FR','DE','ES','IT','NL','SE','NO','DK','MX','BR','IN'];
+  const pick=rds=>{
+    const valid=(rds||[]).filter(d=>d&&d.certification);
+    if(!valid.length)return null;
+    const rank=d=>{
+      const t=d.type==null?6:d.type;
+      if(t===3)return 0;if(t===2)return 1;if(t===4)return 2;if(t===5)return 3;return 4;
+    };
+    valid.sort((a,b)=>rank(a)-rank(b));
+    return valid[0];
+  };
+  for(const iso of preferred){
+    const r=results.find(x=>x.iso_3166_1===iso);
+    if(!r)continue;
+    const rd=pick(r.release_dates);
+    if(!rd)continue;
+    const reason=[...(rd.descriptors||[]).filter(Boolean)].join(', ')||(rd.advisory||'').trim()||'';
+    return{label:rd.certification,reason};
+  }
+  for(const r of results){
+    const rd=pick(r.release_dates);
+    if(rd){
+      const reason=[...(rd.descriptors||[]).filter(Boolean)].join(', ')||(rd.advisory||'').trim()||'';
+      return{label:rd.certification,reason};
+    }
+  }
+  return null;
+}
+function resolveTvCert(data){
+  const results=data.results||[];
+  const preferred=['US','GB','CA','AU','IE','NZ','FR','DE'];
+  for(const iso of preferred){
+    const r=results.find(x=>x.iso_3166_1===iso);
+    if(!r||!r.rating)continue;
+    const reason=[...(r.descriptors||[]).filter(Boolean)].join(', ')||'';
+    return{label:r.rating,reason};
+  }
+  for(const r of results){
+    if(r&&r.rating){
+      const reason=[...(r.descriptors||[]).filter(Boolean)].join(', ')||'';
+      return{label:r.rating,reason};
+    }
+  }
+  return null;
+}
+function getAgeRating(item,type){
+  const t=type||item._homeType||'movie';
+  const id=item&&item.id;
+  if(id==null)return Promise.resolve(null);
+  const key=t+':'+id;
+  if(ratingCache[key])return Promise.resolve(ratingCache[key]);
+  const url=t==='movie'
+    ?`https://api.themoviedb.org/3/movie/${id}/release_dates?api_key=x`
+    :`https://api.themoviedb.org/3/tv/${id}/content_ratings?api_key=x`;
+  const p=(t==='movie'?fetchJSON(url).then(resolveMovieCert):fetchJSON(url).then(resolveTvCert))
+    .then(cert=>{ratingCache[key]=cert||null;return cert||null;})
+    .catch(()=>{ratingCache[key]=null;return null;});
+  return p;
+}
+let ratingSeq=0;
+const ratingReasons=new Map();
+function ratingInfoHtml(cert,extra){
+  if(!cert||!cert.label)return '';
+  const cls=extra?' cert-'+extra:'';
+  const reason=(cert.reason||'').trim();
+  if(!reason)return`<span class="cert-badge${cls}">${sanitize(cert.label)}</span>`;
+  const rid=++ratingSeq;
+  ratingReasons.set(rid,{label:cert.label,reason});
+  return`<span class="cert-badge${cls}">${sanitize(cert.label)}<button type="button" class="rating-info-btn" data-rid="${rid}" aria-label="Why is this ${sanitize(cert.label)}?" title="Why is this ${sanitize(cert.label)}?"><i class="fa-solid fa-circle-info"></i></button></span>`;
+}
+let ratingPopEl=null;
+function showRatingPopover(btn){
+  closeRatingPopover();
+  const rid=btn?Number(btn.dataset.rid):0;
+  const info=ratingReasons.get(rid);
+  if(!info||!info.reason)return;
+  const pop=document.createElement('div');
+  pop.className='rating-pop';
+  const head=document.createElement('div');
+  head.className='rating-pop-head';
+  head.textContent=info.label;
+  const body=document.createElement('div');
+  body.className='rating-pop-body';
+  body.textContent=info.reason;
+  pop.appendChild(head);
+  pop.appendChild(body);
+  document.body.appendChild(pop);
+  const r=btn.getBoundingClientRect();
+  const pr=pop.getBoundingClientRect();
+  const gap=10;
+  let top=r.bottom+gap;
+  let left=r.left-((pr.width-r.width)/2);
+  const vw=window.innerWidth,vh=window.innerHeight;
+  if(top+pr.height>vh-8)top=r.top-pr.height-gap;
+  if(top<8)top=8;
+  left=Math.min(Math.max(8,left),vw-pr.width-8);
+  pop.style.top=top+'px';
+  pop.style.left=left+'px';
+  pop.classList.add('show');
+  ratingPopEl=pop;
+  const onDoc=(e)=>{
+    if(e.type!=='click'){closeRatingPopover();return;}
+    if(e.target&&e.target.closest&&e.target.closest('.rating-pop'))return;
+    if(e.target&&e.target.closest&&e.target.closest('.rating-info-btn'))return;
+    closeRatingPopover();
+  };
+  const onKey=(e)=>{if(e.key==='Escape')closeRatingPopover();};
+  document.addEventListener('click',onDoc);
+  document.addEventListener('scroll',onDoc,{passive:true});
+  window.addEventListener('resize',onDoc);
+  document.addEventListener('keydown',onKey);
+  pop._cleanup=()=>{
+    document.removeEventListener('click',onDoc);
+    document.removeEventListener('scroll',onDoc);
+    window.removeEventListener('resize',onDoc);
+    document.removeEventListener('keydown',onKey);
+  };
+}
+function closeRatingPopover(){
+  if(ratingPopEl){
+    if(ratingPopEl._cleanup)ratingPopEl._cleanup();
+    ratingPopEl.remove();
+    ratingPopEl=null;
+  }
+}
+document.addEventListener('click',(e)=>{
+  const btn=e.target&&e.target.closest?e.target.closest('.rating-info-btn'):null;
+  if(btn){
+    e.preventDefault();
+    e.stopPropagation();
+    showRatingPopover(btn);
+    return;
+  }
+  if(ratingPopEl)closeRatingPopover();
+},true);
+
 function toggleSidebar(){
   sidebarCollapsed=!sidebarCollapsed;
   const sb=document.getElementById('sidebar');
@@ -378,10 +522,44 @@ async function loadHomeTrendingRow(tmdbType,containerId){
       card.style.scrollSnapAlign='start';
       el.appendChild(card);
     });
+    refreshRowNavFor(el);
   }catch(e){
     const el=document.getElementById(containerId);
     if(el)el.innerHTML='<div style="color:var(--muted);font-size:0.8rem;padding:1rem;">Failed to load.</div>';
   }
+}
+
+// ============ SCROLLABLE ROW NAVIGATION ============
+// Left/right arrow controls for the horizontally scrollable card rows on the
+// homepage, mirroring the hero carousel's navigation behaviour.
+function initRowNav(){
+  document.querySelectorAll('.scroll-row-wrap').forEach(wrap=>{
+    const row=wrap.querySelector('.scroll-row');
+    const prev=wrap.querySelector('.row-nav-prev');
+    const next=wrap.querySelector('.row-nav-next');
+    if(!row||!prev||!next)return;
+    prev.addEventListener('click',e=>{e.preventDefault();scrollRowBy(row,-1);});
+    next.addEventListener('click',e=>{e.preventDefault();scrollRowBy(row,1);});
+    row.addEventListener('scroll',()=>updateRowNav(row,prev,next),{passive:true});
+    updateRowNav(row,prev,next);
+  });
+}
+function scrollRowBy(row,dir){
+  if(!row)return;
+  row.scrollBy({left:dir*Math.max(1,row.clientWidth*0.9),behavior:'smooth'});
+}
+function updateRowNav(row,prev,next){
+  if(!row)return;
+  const pos=row.scrollLeft;
+  const max=row.scrollWidth-row.clientWidth;
+  if(prev)prev.classList.toggle('disabled',pos<=1);
+  if(next)next.classList.toggle('disabled',max-pos<=1);
+}
+function refreshRowNavFor(row){
+  if(!row)return;
+  const wrap=row.closest('.scroll-row-wrap');
+  if(!wrap)return;
+  updateRowNav(row,wrap.querySelector('.row-nav-prev'),wrap.querySelector('.row-nav-next'));
 }
 
 // ============ HERO FEATURED CAROUSEL ============
@@ -407,8 +585,8 @@ const heroCarousel={
     this.els.prev=document.getElementById('heroPrevBtn');
     this.els.next=document.getElementById('heroNextBtn');
     this.reducedMotion=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.els.prev.addEventListener('click',()=>this.goto(this.index-1));
-    this.els.next.addEventListener('click',()=>this.goto(this.index+1));
+    this.els.prev.addEventListener('click',()=>this.goto(this.index-1,'prev'));
+    this.els.next.addEventListener('click',()=>this.goto(this.index+1,'next'));
     this.els.carousel.addEventListener('mouseenter',()=>{this.hovered=true;this.stopTimer();});
     this.els.carousel.addEventListener('mouseleave',()=>{this.hovered=false;this.startTimer();});
     this.els.carousel.addEventListener('touchstart',(e)=>{
@@ -420,7 +598,7 @@ const heroCarousel={
       const dx=t.clientX-this.touch.x;
       const dy=t.clientY-this.touch.y;
       this.touch={x:null,y:null};
-      if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>40){this.goto(this.index+(dx<0?1:-1));}
+      if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>40){this.goto(this.index+(dx<0?1:-1),dx<0?'next':'prev');}
       else this.startTimer();
     },{passive:true});
     document.addEventListener('visibilitychange',()=>{if(document.hidden)this.stopTimer();else this.startTimer();});
@@ -434,7 +612,7 @@ const heroCarousel={
     if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'))return;
     if(t&&t.classList&&(t.classList.contains('card')||t.classList.contains('recent-search-row')))return;
     e.preventDefault();
-    this.goto(this.index+(e.key==='ArrowRight'?1:-1));
+    this.goto(this.index+(e.key==='ArrowRight'?1:-1),e.key==='ArrowRight'?'next':'prev');
   },
   onSlideClick(e){
     const wlBtn=e.target.closest('.hero-wl');
@@ -554,16 +732,48 @@ const heroCarousel={
     const dots=this.els.dots.querySelectorAll('.hero-dot');
     dots.forEach((d,i)=>{const on=i===this.index;d.classList.toggle('active',on);d.setAttribute('aria-selected',String(on));});
   },
-  goto(i){
+  pickDirection(from,to){
+    const total=this.slides.length;
+    const forward=(to-from+total)%total;
+    const backward=(from-to+total)%total;
+    return forward<=backward?'next':'prev';
+  },
+  goto(i,dir){
     const total=this.slides.length;
     if(!total)return;
+    const prevIndex=this.index;
     i=((i%total)+total)%total;
+    const changed=i!==prevIndex;
+    this.els.slides.querySelectorAll('.from-right,.from-left,.to-left,.to-right').forEach(s=>s.classList.remove('from-right','from-left','to-left','to-right'));
+    if(this._transitionCleanup){clearTimeout(this._transitionCleanup);this._transitionCleanup=null;}
+    const direction=changed?(dir||this.pickDirection(prevIndex,i)):null;
     this.index=i;
-    this.slides.forEach((s,idx)=>{
-      const on=idx===i;
-      s.el.classList.toggle('active',on);
-      s.el.setAttribute('aria-hidden',String(!on));
-    });
+    if(changed&&direction&&!this.reducedMotion){
+      const enterCls=direction==='next'?'from-right':'from-left';
+      const leaveCls=direction==='next'?'to-left':'to-right';
+      const prevEl=this.slides[prevIndex].el;
+      const newEl=this.slides[i].el;
+      this.slides.forEach((s,idx)=>{
+        if(idx!==i&&idx!==prevIndex){s.el.classList.remove('active');s.el.setAttribute('aria-hidden','true');}
+      });
+      prevEl.classList.remove('active');
+      prevEl.classList.add(leaveCls);
+      prevEl.setAttribute('aria-hidden','true');
+      newEl.classList.add(enterCls);
+      newEl.setAttribute('aria-hidden','false');
+      void newEl.offsetHeight;
+      newEl.classList.add('active');
+      this._transitionCleanup=setTimeout(()=>{
+        this.els.slides.querySelectorAll('.from-right,.from-left,.to-left,.to-right').forEach(s=>s.classList.remove('from-right','from-left','to-left','to-right'));
+        this._transitionCleanup=null;
+      },780);
+    }else{
+      this.slides.forEach((s,idx)=>{
+        const on=idx===i;
+        s.el.classList.toggle('active',on);
+        s.el.setAttribute('aria-hidden',String(!on));
+      });
+    }
     this.updateDots();
     this.preload(i);
     this.fillDetails(this.slides[i]);
@@ -587,20 +797,27 @@ const heroCarousel={
     let details=null;
     try{details=await loadFeaturedDetails(s.item,s.type);}catch(e){details=null;}
     s._detailsLoading=false;
-    if(!details)return;
-    s._detailsLoaded=true;
-    if(!s.genres.length&&Array.isArray(details.genres))s.genres=details.genres.map(g=>g&&g.name?g.name:'').filter(Boolean);
-    if(s.type==='movie'&&details.runtime)s.runtime=details.runtime;
-    if(s.type==='tv'&&details.number_of_seasons)s.seasons=details.number_of_seasons;
-    if(!s.backdrop&&details.backdrop_path)s.backdrop=IMG_BG+details.backdrop_path;
-    if(!s.overview&&details.overview)s.overview=details.overview;
-    this.renderInfo(s);
+    if(details){
+      s._detailsLoaded=true;
+      if(!s.genres.length&&Array.isArray(details.genres))s.genres=details.genres.map(g=>g&&g.name?g.name:'').filter(Boolean);
+      if(s.type==='movie'&&details.runtime)s.runtime=details.runtime;
+      if(s.type==='tv'&&details.number_of_seasons)s.seasons=details.number_of_seasons;
+      if(!s.backdrop&&details.backdrop_path)s.backdrop=IMG_BG+details.backdrop_path;
+      if(!s.overview&&details.overview)s.overview=details.overview;
+      this.renderInfo(s);
+    }
+    getAgeRating(s.item,s.type).then(cert=>{
+      if(!cert||!cert.label)return;
+      s.cert=cert;
+      this.renderInfo(s);
+    });
   },
   renderInfo(s){
     const el=s.el;
     if(!el)return;
     const bits=[];
     if(s.year)bits.push(`<span>${sanitize(s.year)}</span>`);
+    if(s.cert&&s.cert.label)bits.push(`<span class="hero-cert">${ratingInfoHtml(s.cert)}</span>`);
     if(s.rating>0)bits.push(`<span class="hero-rating"><i class="fa-solid fa-star"></i> ${s.rating.toFixed(1)}</span>`);
     if(s.type==='movie'&&s.runtime)bits.push(`<span>${s.runtime} min</span>`);
     if(s.type==='tv'&&s.seasons)bits.push(`<span>${s.seasons} Season${s.seasons>1?'s':''}</span>`);
@@ -613,6 +830,11 @@ const heroCarousel={
     const bg=el.querySelector('.hero-slide-bg');
     if(bg&&s.backdrop&&!bg.getAttribute('data-final')){bg.style.backgroundImage=`url('${s.backdrop}')`;bg.setAttribute('data-final','1');}
   },
+  nextAutoDir(){
+    const d=this._autoDir||'next';
+    this._autoDir=d==='next'?'prev':'next';
+    return d;
+  },
   startTimer(){this.hovered=false;this.restartTimer();},
   stopTimer(){clearTimeout(this.timer);this.timer=null;},
   restartTimer(){
@@ -620,7 +842,7 @@ const heroCarousel={
     if(this.hovered||this.reducedMotion)return;
     if(currentPage!=='home'||document.hidden)return;
     if(!this.slides.length)return;
-    this.timer=setTimeout(()=>this.goto(this.index+1),this.INTERVAL);
+    this.timer=setTimeout(()=>this.goto(this.index+1,this.nextAutoDir()),this.INTERVAL);
   }
 };
 
@@ -656,7 +878,7 @@ async function renderFeatured(item){
   if(!el)return;
   if(!item){el.innerHTML='';return;}
   el.innerHTML='<div class="featured-skeleton"><div class="featured-sk-l"></div><div class="featured-sk-r"><div class="featured-sk-line tall"></div><div class="featured-sk-line short"></div><div class="featured-sk-line"></div></div></div>';
-  const details=await loadFeaturedDetails(item);
+  const [details, cert] = await Promise.all([loadFeaturedDetails(item), getAgeRating(item)]);
   if(seq!==searchRequestSeq)return;
   const type=item._homeType;
   const full={...item,...(details||{})};
@@ -684,6 +906,7 @@ async function renderFeatured(item){
           <div class="featured-meta">
             ${year?`<span>${year}</span>`:''}
             ${rating?`<span><i class="fa-solid fa-star" style="color:var(--accent);"></i> ${rating.toFixed(1)}</span>`:''}
+            ${cert&&cert.label?`<span class="featured-cert">${ratingInfoHtml(cert)}</span>`:''}
             ${runtime?`<span>${runtime} min</span>`:''}
             ${seasons?`<span>${seasons} Season${seasons>1?'s':''}</span>`:''}
           </div>
@@ -937,8 +1160,21 @@ function makeCard(item,type,opts={}){
   }
   div.onclick=()=>selectItem(item,type,div);
   div.setAttribute('role','button');div.setAttribute('tabindex','0');
-  div.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectItem(item,type,div);}});
+  div.addEventListener('keydown',e=>{
+    if(e.target&&e.target.closest&&e.target.closest('.rating-info-btn'))return;
+    if(e.key==='Enter'||e.key===' '){e.preventDefault();selectItem(item,type,div);}
+  });
+  attachCardCert(div,item,type);
   return div;
+}
+
+function attachCardCert(card,item,type){
+  getAgeRating(item,type).then(cert=>{
+    if(!cert||!cert.label||!card.isConnected)return;
+    const existing=card.querySelector('.card-cert');
+    if(existing){existing.outerHTML=ratingInfoHtml(cert,'card');return;}
+    card.insertAdjacentHTML('beforeend',ratingInfoHtml(cert,'card'));
+  });
 }
 
 function renderPagination(type){
@@ -964,7 +1200,7 @@ async function selectItem(item,type,cardEl){
     ${poster?`<img class="player-poster" src="${poster}" alt="${sanitize(title)}"/>`:''}
     <div class="player-info">
       <h2>${sanitize(title)}</h2>
-      <span class="meta-sub">${year}${rating?` &middot; &#9733; ${rating}`:''}</span>
+      <span class="meta-sub" id="playerMetaSub">${year}${rating?` &middot; &#9733; ${rating}`:''}</span>
       <p class="player-overview" id="playerOverview">${sanitize(overview)||'<span style="opacity:0.35">Loading…</span>'}</p>
       <button class="wl-btn ${isInWatchlist(item.id)?'in-list':''}" onclick="toggleWatchlistFromPlayer('${type}')">
         <span class="wl-icon"></span> ${isInWatchlist(item.id)?'In Watchlist':'Add to Watchlist'}
@@ -981,6 +1217,10 @@ async function selectItem(item,type,cardEl){
       </div>
     </div>`;
   switchPage('player');
+  getAgeRating(item,type).then(cert=>{
+    const sub=document.getElementById('playerMetaSub');
+    if(sub&&cert&&cert.label)sub.insertAdjacentHTML('beforeend',' &middot; '+ratingInfoHtml(cert));
+  });
   const frame=document.getElementById('playerFrame');
   frame.style.opacity='0.5';frame.style.transition='opacity 0.3s ease';
   frame.onload=()=>{frame.style.opacity='1';frame.onload=null;};
@@ -1141,6 +1381,7 @@ function renderHomeContinue(){
     card.style.minWidth='110px';card.style.scrollSnapAlign='start';
     grid.appendChild(card);
   });
+  refreshRowNavFor(grid);
 }
 
 function showRemoveConfirmModal(item){
@@ -1208,6 +1449,7 @@ function renderHomeWatchlist(){
     card.style.minWidth='110px';card.style.scrollSnapAlign='start';
     grid.appendChild(card);
   });
+  refreshRowNavFor(grid);
 }
 function makeFeaturedCard(stored,mode){
   const type=stored.type||stored._homeType||'movie';
@@ -1279,6 +1521,11 @@ function makeFeaturedCard(stored,mode){
       tagsEl.innerHTML=details.genres.filter(g=>g&&g.name).map(g=>`<span class="featured-tag">${sanitize(g.name)}</span>`).join('');
       metaEl.insertAdjacentElement('afterend',tagsEl);
     }
+  });
+  getAgeRating({...stored,type},type).then(cert=>{
+    if(!cert||!cert.label||!el.isConnected)return;
+    const m=el.querySelector('.featured-meta');
+    if(m)m.insertAdjacentHTML('beforeend',`<span class="featured-cert">${ratingInfoHtml(cert)}</span>`);
   });
   return el;
 }
@@ -1379,6 +1626,7 @@ function setupKeyboardShortcuts(){
   renderHomeContinue();renderHomeWatchlist();
   loadHomeTrendingRow('movie','home-moviesRow');
   loadHomeTrendingRow('tv','home-tvRow');
+  initRowNav();
   renderRecentSearches();
   setupSearchEvents();
   heroCarousel.init();
