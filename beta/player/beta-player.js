@@ -13,6 +13,12 @@
   var PROXY = null;
   var ACCENT = 'ff2e2e';
 
+  // showToast lives in the app closure; reach it through the exported namespace.
+  function toast(msg, type) {
+    var app = window.YStreamBeta && window.YStreamBeta.app;
+    if (app && typeof app.showToast === 'function') app.showToast(msg, type);
+  }
+
   // Provider embed URL builders (documented integration shape, same as production).
   var EMBED_BUILDERS = {
     videasy: {
@@ -213,7 +219,7 @@
     var directUrl = buildDirectUrl();
     loadIntoFrame(directUrl);
     state.lastFallbackReason = why;
-    showToast('Proxy experiment failed — direct embed fallback loaded', 'warn');
+    toast('Proxy experiment failed — direct embed fallback loaded', 'warn');
   }
 
   function handleFrameLoaded() {
@@ -295,47 +301,47 @@
     var sameOrigin = state.diagCtx && probeSameOrigin(state.diagCtx.frame);
     switch (action) {
       case 'play':
-        if (video && sameOrigin) { video.play().then(function(){showToast('Play probe: OK','ok');},function(e){showToast('Play probe rejected: '+e,'warn');}); }
-        else showToast('Play probe: N/A (no same-origin video)', 'info');
+        if (video && sameOrigin) { video.play().then(function(){toast('Play probe: OK','ok');},function(e){toast('Play probe rejected: '+e,'warn');}); }
+        else toast('Play probe: N/A (no same-origin video)', 'info');
         break;
       case 'pause':
-        if (video && sameOrigin) { video.pause(); showToast('Pause probe: OK', 'ok'); }
-        else showToast('Pause probe: N/A (no same-origin video)', 'info');
+        if (video && sameOrigin) { video.pause(); toast('Pause probe: OK', 'ok'); }
+        else toast('Pause probe: N/A (no same-origin video)', 'info');
         break;
       case 'seek':
-        if (video && sameOrigin && isFinite(video.duration)) { var t = Math.min(video.currentTime + 15, video.duration - 1); video.currentTime = t; showToast('Seek probe → ' + Math.floor(t) + 's', 'ok'); }
-        else showToast('Seek probe: N/A (no same-origin video)', 'info');
+        if (video && sameOrigin && isFinite(video.duration)) { var t = Math.min(video.currentTime + 15, video.duration - 1); video.currentTime = t; toast('Seek probe → ' + Math.floor(t) + 's', 'ok'); }
+        else toast('Seek probe: N/A (no same-origin video)', 'info');
         break;
       case 'volume':
-        if (video && sameOrigin) { video.volume = Math.min(1, (video.volume || 0) + 0.1); video.muted = false; showToast('Volume probe → ' + Math.round(video.volume * 100) + '%', 'ok'); }
-        else showToast('Volume probe: N/A (no same-origin video)', 'info');
+        if (video && sameOrigin) { video.volume = Math.min(1, (video.volume || 0) + 0.1); video.muted = false; toast('Volume probe → ' + Math.round(video.volume * 100) + '%', 'ok'); }
+        else toast('Volume probe: N/A (no same-origin video)', 'info');
         break;
       case 'mute':
-        if (video && sameOrigin) { video.muted = !video.muted; showToast('Mute probe → ' + (video.muted ? 'muted' : 'unmuted'), 'ok'); }
-        else showToast('Mute probe: N/A (no same-origin video)', 'info');
+        if (video && sameOrigin) { video.muted = !video.muted; toast('Mute probe → ' + (video.muted ? 'muted' : 'unmuted'), 'ok'); }
+        else toast('Mute probe: N/A (no same-origin video)', 'info');
         break;
       case 'fullscreen':
         state.fullscreenTried = true;
         try {
           var f = elements.frame;
-          if (f.requestFullscreen) { f.requestFullscreen().then(function(){state.fullscreenResult=true;showToast('Fullscreen probe: OK','ok');},function(){state.fullscreenResult=false;showToast('Fullscreen probe rejected','warn');}); }
+          if (f.requestFullscreen) { f.requestFullscreen().then(function(){state.fullscreenResult=true;toast('Fullscreen probe: OK','ok');},function(){state.fullscreenResult=false;toast('Fullscreen probe rejected','warn');}); }
           else if (f.webkitRequestFullscreen) { f.webkitRequestFullscreen(); state.fullscreenResult = true; }
-          else { state.fullscreenResult = false; showToast('Fullscreen probe: API unavailable', 'info'); }
-        } catch (e) { state.fullscreenResult = false; showToast('Fullscreen probe error: ' + e, 'bad'); }
+          else { state.fullscreenResult = false; toast('Fullscreen probe: API unavailable', 'info'); }
+        } catch (e) { state.fullscreenResult = false; toast('Fullscreen probe error: ' + e, 'bad'); }
         if (window.YStreamBeta.app) window.YStreamBeta.app.refreshDiagnostics();
         break;
       case 'pip':
         if (video && sameOrigin && video.requestPictureInPicture) {
-          video.requestPictureInPicture().then(function(){showToast('PiP probe: OK','ok');},function(e){showToast('PiP probe: ' + e,'warn');});
-        } else showToast('PiP probe: N/A (no same-origin video / unsupported)', 'info');
+          video.requestPictureInPicture().then(function(){toast('PiP probe: OK','ok');},function(e){toast('PiP probe: ' + e,'warn');});
+        } else toast('PiP probe: N/A (no same-origin video / unsupported)', 'info');
         break;
       case 'popup-test': {
         if (sameOrigin && state.diagCtx.frame.contentWindow && state.diagCtx.frame.contentWindow.__YSTREAM_BETA__ && state.diagCtx.frame.contentWindow.__YSTREAM_BETA__.popup) {
           var n = state.diagCtx.frame.contentWindow.__YSTREAM_BETA__.popup._fire('https://ads.example/landing?campaign=test', '_blank');
-          showToast('Popup probe: stub returned ' + n + ' · no tab opened', 'ok');
+          toast('Popup probe: stub returned ' + n + ' · no tab opened', 'ok');
           window.YStreamBeta.app.refreshDiagnostics();
         } else {
-          showToast('Popup probe: blocker not installed inside player (cross-origin?)', 'info');
+          toast('Popup probe: blocker not installed inside player (cross-origin?)', 'info');
         }
         break;
       }

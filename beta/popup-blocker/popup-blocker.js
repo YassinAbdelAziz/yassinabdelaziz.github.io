@@ -54,7 +54,7 @@
     function isProviderUrl(u) {
       if (!u) return false;
       var origin;
-      try { origin = new URL(u, location.href).origin; } catch (e) { return false; }
+      try { origin = new URL(u, document.baseURI).origin; } catch (e) { return false; }
       for (var i = 0; i < providerOrigins.length; i++) {
         var base = providerOrigins[i];
         if (origin === base || origin === base.replace(/^https:/, 'http:') || origin === base.replace(/^http:/, 'https:')) return true;

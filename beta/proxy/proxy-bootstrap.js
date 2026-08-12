@@ -50,7 +50,9 @@
     function isProviderOrigin(u) {
       if (!u || typeof u !== 'string') return false;
       var origin;
-      try { origin = new URL(u, location.href).origin; } catch (e) { return false; }
+      // Resolve against document.baseURI (the injected <base href> = provider)
+      // so the provider's own relative URLs are recognised, not our origin.
+      try { origin = new URL(u, document.baseURI).origin; } catch (e) { return false; }
       if (!origin || origin === location.origin) return false;
       for (var i = 0; i < providerOrigins.length; i++) {
         var base = providerOrigins[i];
@@ -70,7 +72,7 @@
 
     function toProxyUrl(url) {
       try {
-        var abs = new URL(url, location.href).href;
+        var abs = new URL(url, document.baseURI).href;
         return proxyBase + encodeURIComponent(abs);
       } catch (e) {
         return url;

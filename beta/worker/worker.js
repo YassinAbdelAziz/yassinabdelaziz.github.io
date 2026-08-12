@@ -261,15 +261,23 @@ async function rewritePlayerHtml(html, upstreamUrl, params, config, request) {
   const providerKey = params.get('provider') || config.provider || 'videasy';
   const providerOrigins = PROVIDER_ORIGINS[providerKey] || [upstream.origin];
 
+  // The <base href> injected below is the provider's URL so the provider's own
+  // relative asset references still resolve against its origin. That means any
+  // *relative* /beta URL in this document would be mis-resolved to the provider
+  // origin, so every URL we rewrite/inject must be ABSOLUTE to this origin.
+  const origin = new URL(request.url).origin;
+  const proxyBase = origin + PROXY_BASE;
+  const playerBase = origin + PLAYER_BASE;
+
   const configBlock = JSON.stringify({
     provider: providerKey,
     upstream: upstreamUrl,
     playerUrl: request.url,
-    proxyBase: PROXY_BASE,
+    proxyBase: proxyBase,
     injected: true,
     servedAt: Date.now(),
     providerOrigins: providerOrigins,
-    proxyBootstrap: { providerOrigins: providerOrigins, proxyBase: PROXY_BASE },
+    proxyBootstrap: { providerOrigins: providerOrigins, proxyBase: proxyBase },
     popupBlocker: { providerOrigins: providerOrigins, blockAllOpens: true, blockNavOutside: true },
     adFilter: { enabled: true }
   });
@@ -278,9 +286,9 @@ async function rewritePlayerHtml(html, upstreamUrl, params, config, request) {
   const injection =
     '<script>window.__YSTREAM_BETA__=' + configBlock + ';</script>' +
     '<base href="' + escapeAttr(upstreamUrl) + '" data-ystream-injected="1">' +
-    '<script data-ystream-injected="" src="/beta/popup-blocker/popup-blocker.js"></script>' +
-    '<script data-ystream-injected="" src="/beta/ad-filter/ad-filter.js"></script>' +
-    '<script data-ystream-injected="" src="/beta/proxy/proxy-bootstrap.js"></script>';
+    '<script data-ystream-injected="" src="' + origin + '/beta/popup-blocker/popup-blocker.js"></script>' +
+    '<script data-ystream-injected="" src="' + origin + '/beta/ad-filter/ad-filter.js"></script>' +
+    '<script data-ystream-injected="" src="' + origin + '/beta/proxy/proxy-bootstrap.js"></script>';
 
   let out = html;
   const lower = html.slice(0, 512).toLowerCase();
@@ -302,39 +310,39 @@ async function rewritePlayerHtml(html, upstreamUrl, params, config, request) {
   const isInjected = (el) => el.hasAttribute('data-ystream-injected');
 
   const rewriter = new HTMLRewriter()
-    .on('script[src]', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream); } })
+    .on('script[src]', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream, origin); } })
     .on('link', {
       element: (el) => {
         if (isInjected(el)) return;
         const href = el.getAttribute('href');
-        if (href && looksLikeHttpOrPath(href)) setUrlAttr(el, 'href', upstream);
+        if (href && looksLikeHttpOrPath(href)) setUrlAttr(el, 'href', upstream, origin);
         const is = el.getAttribute('imagesrcset');
-        if (is) el.setAttribute('imagesrcset', rewriteSrcset(is, upstream));
+        if (is) el.setAttribute('imagesrcset', rewriteSrcset(is, upstream, origin));
       }
     })
     .on('img', {
       element: (el) => {
         if (isInjected(el)) return;
-        setUrlAttr(el, 'src', upstream);
+        setUrlAttr(el, 'src', upstream, origin);
         const ss = el.getAttribute('srcset');
-        if (ss) el.setAttribute('srcset', rewriteSrcset(ss, upstream));
+        if (ss) el.setAttribute('srcset', rewriteSrcset(ss, upstream, origin));
       }
     })
     .on('source', {
       element: (el) => {
         if (isInjected(el)) return;
-        setUrlAttr(el, 'src', upstream);
+        setUrlAttr(el, 'src', upstream, origin);
         const ss = el.getAttribute('srcset');
-        if (ss) el.setAttribute('srcset', rewriteSrcset(ss, upstream));
+        if (ss) el.setAttribute('srcset', rewriteSrcset(ss, upstream, origin));
       }
     })
-    .on('iframe', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream); } })
-    .on('video', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream); } })
-    .on('audio', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream); } })
-    .on('embed', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream); } })
-    .on('track', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream); } })
-    .on('input', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream); } })
-    .on('object', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'data', upstream); } })
+    .on('iframe', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream, origin); } })
+    .on('video', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream, origin); } })
+    .on('audio', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream, origin); } })
+    .on('embed', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream, origin); } })
+    .on('track', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream, origin); } })
+    .on('input', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'src', upstream, origin); } })
+    .on('object', { element: (el) => { if (!isInjected(el)) setUrlAttr(el, 'data', upstream, origin); } })
     .on('meta', {
       element: (el) => {
         if (isInjected(el)) return;
@@ -346,49 +354,49 @@ async function rewritePlayerHtml(html, upstreamUrl, params, config, request) {
           return;
         }
         const c = el.getAttribute('content');
-        if (c && /^https?:\/\//i.test(c.trim())) el.setAttribute('content', toProxy(c, upstream));
+        if (c && /^https?:\/\//i.test(c.trim())) el.setAttribute('content', toProxy(c, upstream, origin));
       }
     })
     .on('a', {
       element: (el) => {
         if (isInjected(el)) return;
         const href = el.getAttribute('href');
-        if (href && looksLikeHttpOrPath(href)) el.setAttribute('href', toPlayerUrl(href, upstream));
+        if (href && looksLikeHttpOrPath(href)) el.setAttribute('href', toPlayerUrl(href, upstream, origin));
       }
     })
     .on('form', {
       element: (el) => {
         if (isInjected(el)) return;
         const a = el.getAttribute('action');
-        if (a && looksLikeHttpOrPath(a)) el.setAttribute('action', toProxy(a, upstream));
+        if (a && looksLikeHttpOrPath(a)) el.setAttribute('action', toProxy(a, upstream, origin));
       }
     })
     .on('style', {
       element: (el) => {
         if (isInjected(el)) return;
         const s = el.getAttribute('style');
-        if (s) el.setAttribute('style', rewriteCssUrls(s, upstream));
+        if (s) el.setAttribute('style', rewriteCssUrls(s, upstream, origin));
       },
       text: (t) => {
-        if (t.text) t.replace(rewriteCssUrls(t.text, upstream));
+        if (t.text) t.replace(rewriteCssUrls(t.text, upstream, origin));
       }
     })
     .on('[style]', {
       element: (el) => {
         if (isInjected(el)) return;
         const s = el.getAttribute('style');
-        if (s) el.setAttribute('style', rewriteCssUrls(s, upstream));
+        if (s) el.setAttribute('style', rewriteCssUrls(s, upstream, origin));
       }
     });
 
   return await rewriter.transform(new Response(out)).text();
-}function setUrlAttr(el, name, upstream) {
+}function setUrlAttr(el, name, upstream, origin) {
   const v = el.getAttribute(name);
   if (!v) return;
   const s = String(v).trim();
   if (/^(data|blob|about|javascript|mailto|tel):/i.test(s)) return;
   if (s.startsWith('#') || s === '') return;
-  el.setAttribute(name, toProxy(s, upstream));
+  el.setAttribute(name, toProxy(s, upstream, origin));
 }
 
 function looksLikeHttpOrPath(v) {
@@ -400,7 +408,7 @@ function looksLikeHttpOrPath(v) {
   return true;
 }
 
-function toProxy(val, upstream) {
+function toProxy(val, upstream, origin) {
   let abs;
   try {
     abs = new URL(String(val), upstream.href).href;
@@ -408,10 +416,12 @@ function toProxy(val, upstream) {
     return val;
   }
   if (!/^https?:\/\//i.test(abs)) return val;
-  return PROXY_BASE + encodeURIComponent(abs);
+  // Absolute: the document carries a <base href> pointing at the provider, so a
+  // relative /beta URL here would be resolved against the provider's origin.
+  return origin + PROXY_BASE + encodeURIComponent(abs);
 }
 
-function toPlayerUrl(val, upstream) {
+function toPlayerUrl(val, upstream, origin) {
   let abs;
   try {
     abs = new URL(String(val), upstream.href).href;
@@ -419,25 +429,25 @@ function toPlayerUrl(val, upstream) {
     return val;
   }
   if (!/^https?:\/\//i.test(abs)) return val;
-  return PLAYER_BASE + encodeURIComponent(abs);
+  return origin + PLAYER_BASE + encodeURIComponent(abs);
 }
 
-function rewriteSrcset(srcset, upstream) {
+function rewriteSrcset(srcset, upstream, origin) {
   return String(srcset)
     .split(',')
     .map((part) => {
       const m = part.trim().match(/^(\S+)(\s+.*)?$/);
       if (!m) return part;
-      return toProxy(m[1], upstream) + (m[2] || '');
+      return toProxy(m[1], upstream, origin) + (m[2] || '');
     })
     .join(', ');
 }
 
-function rewriteCssUrls(css, upstream) {
+function rewriteCssUrls(css, upstream, origin) {
   return String(css).replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (m, q, url) => {
     const s = String(url).trim();
     if (/^(data|#)/i.test(s)) return m;
-    return 'url(' + q + toProxy(s, upstream) + q + ')';
+    return 'url(' + q + toProxy(s, upstream, origin) + q + ')';
   });
 }
 
