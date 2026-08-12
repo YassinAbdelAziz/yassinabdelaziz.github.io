@@ -31,22 +31,25 @@ are version-controlled and editable without redeploying the Worker.
 
 1. `cp wrangler.toml.example wrangler.toml`
 2. Fill in `zone_id` and confirm your custom domain is **proxied** (orange cloud)
-   through Cloudflare so the exact-path routes take effect.
+   through Cloudflare so the routes take effect.
 3. `npx wrangler deploy`
 
-### Recommended routes (exact paths)
+### Routes (every pattern MUST end with `*`)
 
 ```
-ystream.dpdns.org/beta/healthz
-ystream.dpdns.org/beta/player
-ystream.dpdns.org/beta/proxy
+ystream.dpdns.org/beta/healthz*
+ystream.dpdns.org/beta/player*
+ystream.dpdns.org/beta/proxy*
 ```
 
-Exact paths matter: with wildcards like `/beta/proxy/*`, the Worker would also
-swallow the static module files under `/beta/proxy/` and `/beta/player/`. If you
-must use wildcard routes, set `STATIC_ORIGIN = "yassinabdelaziz.github.io"` in
-the Worker vars so the Worker can pass those module files through from GitHub
-Pages.
+Cloudflare route matching considers the **entire URL including the query
+string**, so an exact pattern like `/beta/player` silently never matches the
+embed URLs (`/beta/player?provider=videasy&type=movie&id=603`). The trailing
+`*` fixes that.
+
+The `*` also swallows the static module files under `/beta/player/` and
+`/beta/proxy/`. Set `STATIC_ORIGIN = "yassinabdelaziz.github.io"` in the Worker
+vars so the Worker passes those files through from GitHub Pages.
 
 ## Scope & limits (honest notes)
 

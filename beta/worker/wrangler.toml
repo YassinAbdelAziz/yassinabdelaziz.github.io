@@ -1,0 +1,27 @@
+name = "screenify-beta-proxy"
+main = "worker.js"
+compatibility_date = "2025-06-01"
+workers_dev = true
+account_id = "dc0e6dca317c52a75e449a8bbdcdc0b2"
+
+# Env vars (all optional):
+#  DEFAULT_PROVIDER : "videasy" | "vidking"   (used when a request omits ?provider=)
+#  REFERER          : upstream Referer to send, e.g. "https://player.videasy.net/"
+#                     (leave unset to mirror the site's no-referrer policy)
+#  STATIC_ORIGIN    : REQUIRED with wildcard routes. Lets the Worker pass
+#                     through the /beta/player/ and /beta/proxy/ module files
+#                     that a trailing-* pattern would otherwise swallow.
+[vars]
+DEFAULT_PROVIDER = "videasy"
+STATIC_ORIGIN = "yassinabdelaziz.github.io"
+# REFERER = "https://player.videasy.net/"
+
+# Cloudflare route patterns consider the ENTIRE URL including the query
+# string, so every pattern MUST end with "*" (the beta embed URLs always carry
+# ?provider=...). The trailing-* also swallows /beta/player/ and /beta/proxy/
+# client-module files; STATIC_ORIGIN above lets the Worker pass those through.
+routes = [
+  { pattern = "ystream.dpdns.org/beta/healthz*", zone_id = "72781a000820588db0cef26dc9601588" },
+  { pattern = "ystream.dpdns.org/beta/player*",  zone_id = "72781a000820588db0cef26dc9601588" },
+  { pattern = "ystream.dpdns.org/beta/proxy*",   zone_id = "72781a000820588db0cef26dc9601588" }
+]

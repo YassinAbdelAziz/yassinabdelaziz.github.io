@@ -12,22 +12,22 @@ compatibility_date = "2024-09-01"
 #  DEFAULT_PROVIDER : "videasy" | "vidking"   (used when a request omits ?provider=)
 #  REFERER          : upstream Referer to send, e.g. "https://player.videasy.net/"
 #                     (leave unset to mirror the site's no-referrer policy)
-#  STATIC_ORIGIN    : only needed if you deploy with wildcard routes
-#                     (e.g. "yassinabdelaziz.github.io") so the Worker can pass
-#                     through /beta/player/ and /beta/proxy/ module files.
+#  STATIC_ORIGIN    : REQUIRED with wildcard routes. Lets the Worker pass
+#                     through the /beta/player/ and /beta/proxy/ module files
+#                     that a trailing-* pattern would otherwise swallow.
 [vars]
 DEFAULT_PROVIDER = "videasy"
+STATIC_ORIGIN = "yassinabdelaziz.github.io"
 # REFERER = "https://player.videasy.net/"
-# STATIC_ORIGIN = "yassinabdelaziz.github.io"
 
 # ---- Routes on the custom domain (cloudflare-proxied) ---------------------
-# Use EXACT paths so the /beta/player/ and /beta/proxy/ folders (client
-# modules) stay served by GitHub Pages and are NOT swallowed by the Worker.
-# If YSTREAM-DOMAIN is not proxied through Cloudflare, deploy on a workers.dev
-# host instead: the beta UI will detect it, report "proxied but NOT same-origin"
-# and fall back to the direct embed.
+# IMPORTANT: Cloudflare route patterns consider the ENTIRE URL including the
+# query string, so every pattern MUST end with "*" — the beta embed URLs always
+# carry ?provider=... and an exact pattern like "/beta/player" silently fails
+# to match them. The trailing-* also swallows /beta/player/ and /beta/proxy/
+# client-module files; STATIC_ORIGIN above lets the Worker pass those through.
 routes = [
-  { pattern = "ystream.dpdns.org/beta/healthz", zone_id = "YOUR_ZONE_ID" },
-  { pattern = "ystream.dpdns.org/beta/player",  zone_id = "YOUR_ZONE_ID" },
-  { pattern = "ystream.dpdns.org/beta/proxy",   zone_id = "YOUR_ZONE_ID" }
+  { pattern = "ystream.dpdns.org/beta/healthz*", zone_id = "YOUR_ZONE_ID" },
+  { pattern = "ystream.dpdns.org/beta/player*",  zone_id = "YOUR_ZONE_ID" },
+  { pattern = "ystream.dpdns.org/beta/proxy*",   zone_id = "YOUR_ZONE_ID" }
 ]

@@ -22,12 +22,14 @@
  *  - Cookies set by the provider are re-scoped to Path=/beta on this origin so
  *    sessions can survive across proxied requests without touching production.
  *
- * Deployment: see wrangler.toml.example + README. Recommended routes (exact):
- *   https://YSTREAM-DOMAIN/beta/healthz
- *   https://YSTREAM-DOMAIN/beta/player
- *   https://YSTREAM-DOMAIN/beta/proxy
- * (exact paths keep the /beta/player/ and /beta/proxy/ folders static so the
- *  client modules there are served by GitHub Pages, not this Worker).
+ * Deployment: see wrangler.toml.example + README. Routes (cloudflare-proxied):
+ *   https://YSTREAM-DOMAIN/beta/healthz*
+ *   https://YSTREAM-DOMAIN/beta/player*
+ *   https://YSTREAM-DOMAIN/beta/proxy*
+ * NOTE: every pattern must end with "*" — Cloudflare route matching considers
+ * the query string, and the embed URLs always carry ?provider=... . The
+ * trailing-* swallows /beta/player/ and /beta/proxy/ client-module files, so
+ * set STATIC_ORIGIN for the Worker to pass those through to GitHub Pages.
  */
 const VERSION = 1;
 const PROXY_BASE = '/beta/proxy?u=';
@@ -51,11 +53,11 @@ const PROVIDERS = {
 // Provider API origins the injected fetch-patch is allowed to route through
 // the proxy. Exact-match list; expand only as needed.
 const PROVIDER_ORIGINS = {
-  videasy: ['https://player.videasy.net', 'https://videasy.net'],
+  videasy: ['https://player.videasy.net', 'https://videasy.net', 'https://player.videasy.to', 'https://videasy.to'],
   vidking: ['https://www.vidking.net', 'https://vidking.net']
 };
 
-const ALLOWED_PLAYER_HOSTS = /(^|\.)(vidking\.net|videasy\.net)$/i;
+const ALLOWED_PLAYER_HOSTS = /(^|\.)(vidking\.net|videasy\.(net|to))$/i;
 const MAX_REDIRECTS = 10;
 
 // Headers that must never be relayed between upstream and the browser.
@@ -115,9 +117,9 @@ async function route(request, env) {
   }
 
   // --- static passthrough ------------------------------------------------
-  // Only reached if a WILDCARD route (e.g. /beta/*) is deployed, which would
-  // otherwise swallow the /beta/player/ and /beta/proxy/ module files. With the
-  // recommended exact routes this handler never runs.
+  // Wildcard routes (e.g. /beta/player*) also swallow the /beta/player/ and
+  // /beta/proxy/ module files; with STATIC_ORIGIN set, those are passed
+  // through to GitHub Pages here. Requires STATIC_ORIGIN to be configured.
   return handleStaticPassthrough(request, env);
 }
 
