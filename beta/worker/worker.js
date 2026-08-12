@@ -283,8 +283,24 @@ async function rewritePlayerHtml(html, upstreamUrl, params, config, request) {
   });
 
   // Config must come BEFORE the injected scripts, which read it at load time.
+  // The history re-home is inlined (not a separate file) so it can never be
+  // served stale by the /beta service worker, and it runs before any provider
+  // script. See the same logic in /beta/popup-blocker/popup-blocker.js.
+  const historyPatch =
+    '<script data-ystream-injected="">(function(){try{' +
+    'function rehome(u){if(u==null)return u;var s=String(u);' +
+    'if(s.charAt(0)==="#")return u;var a;' +
+    'try{a=new URL(s,document.baseURI);}catch(e){return u;}' +
+    'if(a.origin===location.origin)return u;' +
+    'return location.origin+a.pathname+a.search+a.hash;}' +
+    'var rp=history.replaceState,pp=history.pushState;' +
+    'history.replaceState=function(s,t,u){return rp.call(history,s,t,rehome(u));};' +
+    'history.pushState=function(s,t,u){return pp.call(history,s,t,rehome(u));};' +
+    '}catch(e){}})();</script>';
+
   const injection =
     '<script>window.__YSTREAM_BETA__=' + configBlock + ';</script>' +
+    historyPatch +
     '<base href="' + escapeAttr(upstreamUrl) + '" data-ystream-injected="1">' +
     '<script data-ystream-injected="" src="' + origin + '/beta/popup-blocker/popup-blocker.js"></script>' +
     '<script data-ystream-injected="" src="' + origin + '/beta/ad-filter/ad-filter.js"></script>' +

@@ -232,10 +232,11 @@
     // The provider is a Next.js app whose router calls history.pushState /
     // replaceState with the document's root-relative path (e.g.
     // "/beta/player?..."). Because we inject <base href> = the provider origin,
-    // the browser resolves that relative URL cross-origin and throws a
-    // SecurityError, breaking the router. Re-home any URL that would land on a
-    // foreign origin back onto OUR origin, preserving path+search+hash (which
-    // already describe the same proxied route).
+    // the browser resolves that URL cross-origin and throws a SecurityError,
+    // breaking the router. Re-home any URL that would land on a foreign origin
+    // onto OUR origin. The re-homed URL MUST be ABSOLUTE: browsers re-resolve
+    // a relative history URL against the API base URL (the <base> tag), so a
+    // relative result would just bounce back to the provider origin.
     function rehomeHistoryUrl(url) {
       if (url == null) return url;
       var s = String(url);
@@ -243,7 +244,7 @@
       var abs;
       try { abs = new URL(s, document.baseURI); } catch (e) { return url; }
       if (abs.origin === location.origin) return url;
-      return abs.pathname + abs.search + abs.hash;
+      return location.origin + abs.pathname + abs.search + abs.hash;
     }
     try {
       var realPushState = history.pushState;
