@@ -7,7 +7,9 @@
 //  - cache stable proxied static assets (js/css/images/fonts) served through
 //    /beta/proxy so the player environment survives reloads and flaky networks,
 //  - never cache media or player HTML (they vary with every request).
-const CACHE = 'ystream-beta-v1';
+//  - the /beta shell + injected modules use stale-while-revalidate so a deploy
+//    reaches browsers without a manual version bump.
+const CACHE = 'ystream-beta-v2';
 const PROXY = '/beta/proxy';
 const PLAYER = '/beta/player';
 const HEALTH = '/beta/healthz';
@@ -24,18 +26,13 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Static /beta files we know are stable.
-const SHELL = [
-  '/beta/index.html',
-  '/beta/styles.css',
-  '/beta/app.js',
-  '/beta/player/beta-player.js',
-  '/beta/proxy/proxy-client.js',
-  '/beta/diagnostics/diagnostics.js',
-  '/beta/popup-blocker/popup-blocker.js',
-  '/beta/ad-filter/ad-filter.js',
-  '/beta/proxy/proxy-bootstrap.js'
-];
+// A plain Response that a failed respondWith chain can always fall back to.
+function fallbackResponse(status, text) {
+  return new Response(text || 'unavailable', {
+    status: status || 502,
+    statusText: 'Service Unavailable'
+  });
+}
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
@@ -54,14 +51,14 @@ self.addEventListener('fetch', (e) => {
           caches.open(CACHE).then((c) => c.put('/beta/index.html', copy)).catch(() => {});
           return res;
         })
-        .catch(() => caches.match(req).then((r) => r || caches.match('/beta/index.html')))
+        .catch(() => caches.match('/beta/index.html').then((r) => r || fallbackResponse(503, 'offline')))
     );
     return;
   }
 
-  // Never cache proxied player HTML or the health endpoint.
+  // Proxied player HTML + health probe: network only (never cache).
   if (url.pathname === HEALTH || url.pathname === PLAYER) {
-    e.respondWith(fetch(req).catch(() => caches.match(req)));
+    e.respondWith(fetch(req).catch(() => fallbackResponse(502, 'proxy unavailable')));
     return;
   }
 
@@ -80,22 +77,26 @@ self.addEventListener('fetch', (e) => {
           }
           return res;
         })
-        .catch(() => caches.match(req).then((r) => r || new Response('proxy unavailable offline', { status: 502 })))
+        .catch(() => caches.match(req).then((r) => r || fallbackResponse(502, 'proxy unavailable offline')))
     );
     return;
   }
 
-  // Other same-origin /beta static assets: cache first.
+  // Other same-origin /beta static assets (shell + injected modules):
+  // stale-while-revalidate — serve the cached copy instantly, refresh it from
+  // the network in the background so redeploys propagate without a cache bump.
   e.respondWith(
     caches.match(req).then((cached) => {
-      if (cached) return cached;
-      return fetch(req).then((res) => {
-        if (res.ok) {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-        }
-        return res;
-      }).catch(() => caches.match('/beta/index.html'));
+      const refresh = fetch(req)
+        .then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => cached || fallbackResponse(503, 'offline'));
+      return cached || refresh;
     })
   );
 });

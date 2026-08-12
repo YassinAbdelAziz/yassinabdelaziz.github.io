@@ -228,6 +228,30 @@
       window.location.replace = function (u) { if (handleLocationWrite(u)) return realReplace(u); };
     } catch (e) { /* optional */ }
 
+    // ---- history API: keep router state same-origin ----------------------
+    // The provider is a Next.js app whose router calls history.pushState /
+    // replaceState with the document's root-relative path (e.g.
+    // "/beta/player?..."). Because we inject <base href> = the provider origin,
+    // the browser resolves that relative URL cross-origin and throws a
+    // SecurityError, breaking the router. Re-home any URL that would land on a
+    // foreign origin back onto OUR origin, preserving path+search+hash (which
+    // already describe the same proxied route).
+    function rehomeHistoryUrl(url) {
+      if (url == null) return url;
+      var s = String(url);
+      if (s.charAt(0) === '#' || /^(about|data|blob|javascript):/i.test(s)) return url;
+      var abs;
+      try { abs = new URL(s, document.baseURI); } catch (e) { return url; }
+      if (abs.origin === location.origin) return url;
+      return abs.pathname + abs.search + abs.hash;
+    }
+    try {
+      var realPushState = history.pushState;
+      var realReplaceState = history.replaceState;
+      history.pushState = function (state, title, url) { return realPushState.call(history, state, title, rehomeHistoryUrl(url)); };
+      history.replaceState = function (state, title, url) { return realReplaceState.call(history, state, title, rehomeHistoryUrl(url)); };
+    } catch (e) { /* optional */ }
+
     // ---- expose for diagnostics ----------------------------------------
     window.__YSTREAM_BETA__ = window.__YSTREAM_BETA__ || {};
     window.__YSTREAM_BETA__._injected = window.__YSTREAM_BETA__._injected || {};
