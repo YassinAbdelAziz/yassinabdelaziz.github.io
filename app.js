@@ -283,6 +283,19 @@ function getTrending(tmdbType){
   return trendingPromises[tmdbType];
 }
 
+// ============ HERO CAROUSEL TITLE EXCLUSION ============
+// The homepage content rows must not repeat titles that are already featured
+// in the hero carousel. The carousel picks its slides from the same cached
+// trending data, so we publish the chosen ids once they are known and let the
+// rows filter them out before rendering.
+let heroChosenIds=new Set();
+let heroChosenResolve=null;
+const heroChosenReady=new Promise(r=>{heroChosenResolve=r;});
+function publishHeroChosen(ids){
+  heroChosenIds=new Set(ids||[]);
+  if(heroChosenResolve){heroChosenResolve();heroChosenResolve=null;}
+}
+
 // ============ CACHED TV DETAILS FOR HOVER ============
 const tvDetailsCache={};
 async function getTVDetails(id){
@@ -534,8 +547,9 @@ async function loadHomeTrendingRow(tmdbType,containerId){
   renderSkeletons(containerId,14);
   const appType=tmdbType==='movie'?'movie':'tv';
   try{
+    await heroChosenReady;
     const data=await getTrending(tmdbType);
-    const items=(data.results||[]).filter(notAdult).slice(0,14);
+    const items=(data.results||[]).filter(notAdult).filter(x=>!heroChosenIds.has(x.id)).slice(0,14);
     const el=document.getElementById(containerId);
     el.innerHTML='';
     items.forEach(item=>{
@@ -598,7 +612,7 @@ const heroCarousel={
   timer:null,
   hovered:false,
   reducedMotion:false,
-  touch:{x:null,y:null},
+  touch:null,
   els:{},
   init(){
     this.els.carousel=document.getElementById('heroCarousel');
@@ -612,21 +626,171 @@ const heroCarousel={
     this.els.next.addEventListener('click',()=>this.goto(this.index+1,'next'));
     this.els.carousel.addEventListener('mouseenter',()=>{this.hovered=true;this.stopTimer();});
     this.els.carousel.addEventListener('mouseleave',()=>{this.hovered=false;this.startTimer();});
-    this.els.carousel.addEventListener('touchstart',(e)=>{
-      const t=e.touches[0];this.touch={x:t.clientX,y:t.clientY};this.stopTimer();
-    },{passive:true});
-    this.els.carousel.addEventListener('touchend',(e)=>{
-      if(this.touch.x==null)return;
-      const t=e.changedTouches[0];
-      const dx=t.clientX-this.touch.x;
-      const dy=t.clientY-this.touch.y;
-      this.touch={x:null,y:null};
-      if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>40){this.goto(this.index+(dx<0?1:-1),dx<0?'next':'prev');}
-      else this.startTimer();
-    },{passive:true});
+    this.els.carousel.addEventListener('touchstart',e=>this.onTouchStart(e),{passive:true});
+    this.els.carousel.addEventListener('touchmove',e=>this.onTouchMove(e),{passive:false});
+    this.els.carousel.addEventListener('touchend',e=>this.onTouchEnd(e),{passive:true});
+    this.els.carousel.addEventListener('touchcancel',()=>this.onTouchCancel(),{passive:true});
     document.addEventListener('visibilitychange',()=>{if(document.hidden)this.stopTimer();else this.startTimer();});
     document.addEventListener('keydown',e=>this.onKey(e));
     this.els.slides.addEventListener('click',e=>this.onSlideClick(e));
+  },
+  onTouchStart(e){
+    const t=e.touches[0];
+    if(!t)return;
+    this.touch={startX:t.clientX,startY:t.clientY,dx:0,dy:0,axis:null,lastX:t.clientX,lastT:performance.now(),vx:0};
+    this.stopTimer();
+  },
+  onTouchMove(e){
+    if(!this.touch)return;
+    const t=e.touches[0];
+    if(!t)return;
+    const dx=t.clientX-this.touch.startX;
+    const dy=t.clientY-this.touch.startY;
+    if(this.touch.axis===null){
+      if(Math.abs(dx)<8&&Math.abs(dy)<8)return;
+      this.touch.axis=Math.abs(dx)>Math.abs(dy)?'x':'y';
+    }
+    if(this.touch.axis!=='x')return;
+    if(e.cancelable)e.preventDefault();
+    const now=performance.now();
+    const dt=now-this.touch.lastT;
+    if(dt>0)this.touch.vx=(t.clientX-this.touch.lastX)/dt;
+    this.touch.lastX=t.clientX;
+    this.touch.lastT=now;
+    this.touch.dx=dx;
+    this.dragTo(dx);
+  },
+  onTouchEnd(e){
+    if(!this.touch)return;
+    const t=e.changedTouches[0];
+    const dx=t?t.clientX-this.touch.startX:this.touch.dx;
+    const vx=this.touch.vx||0;
+    const width=this.els.carousel.clientWidth||1;
+    const threshold=Math.max(40,width*0.18);
+    const enough=Math.abs(dx)>=threshold;
+    const flicked=Math.abs(vx)>0.5;
+    if(this.touch.axis==='x'&&(enough||flicked)){
+      const forward=dx<0?true:dx>0?false:vx<0;
+      this.commitTouch(this.index+(forward?1:-1),forward?'next':'prev');
+    }else{
+      this.snapBack();
+    }
+    this.touch=null;
+  },
+  onTouchCancel(){
+    if(!this.touch)return;
+    this.snapBack();
+    this.touch=null;
+  },
+  dragTo(dx){
+    const wrap=this.els.slides;
+    wrap.classList.add('dragging');
+    const total=this.slides.length;
+    if(!total)return;
+    const i=this.index;
+    const prev=(i-1+total)%total;
+    const next=(i+1)%total;
+    const w=this.els.carousel.clientWidth||1;
+    const incoming=dx<0?next:prev;
+    const far=dx<0?prev:next;
+    this.slides.forEach((s,idx)=>{
+      const el=s.el;
+      el.classList.remove('from-right','from-left','to-right','to-left');
+      if(idx===i){
+        el.classList.add('active');
+        el.style.transition='none';
+        el.style.visibility='visible';
+        el.style.opacity='1';
+        el.style.transform=`translateX(${dx}px)`;
+      }else if(idx===incoming){
+        el.classList.remove('active');
+        el.style.transition='none';
+        el.style.visibility='visible';
+        el.style.opacity='1';
+        el.style.transform=`translateX(${dx+(idx===next?1:-1)*w}px)`;
+      }else if(idx===far){
+        el.classList.remove('active');
+        el.style.visibility='hidden';
+        el.style.transform='';
+        el.style.opacity='';
+        el.style.transition='';
+      }else{
+        el.classList.remove('active');
+        el.style.visibility='hidden';
+        el.style.transform='';
+        el.style.opacity='';
+        el.style.transition='';
+      }
+    });
+  },
+  commitTouch(targetIndex,dir){
+    const total=this.slides.length;
+    if(!total)return;
+    targetIndex=((targetIndex%total)+total)%total;
+    if(this.reducedMotion){
+      this.index=targetIndex;
+      this.goto(targetIndex);
+      return;
+    }
+    const wrap=this.els.slides;
+    wrap.classList.remove('dragging');
+    const w=this.els.carousel.clientWidth||1;
+    const oldEl=this.slides[this.index].el;
+    const newEl=this.slides[targetIndex].el;
+    const sign=dir==='next'?-1:1;
+    const ease='transform 0.42s cubic-bezier(0.32,0.72,0.33,1),opacity 0.42s ease';
+    oldEl.style.transition=ease;
+    oldEl.style.transform=`translateX(${sign*w}px)`;
+    oldEl.style.opacity='0';
+    newEl.style.transition=ease;
+    newEl.style.transform='translateX(0)';
+    newEl.style.opacity='1';
+    newEl.style.visibility='visible';
+    oldEl.classList.remove('active');
+    newEl.classList.add('active');
+    this.slides.forEach((s,idx)=>{
+      if(idx!==this.index&&idx!==targetIndex){s.el.style.visibility='hidden';s.el.style.transform='';s.el.style.opacity='';s.el.style.transition='';}
+    });
+    this.index=targetIndex;
+    this.updateDots();
+    this.preload(targetIndex);
+    this.fillDetails(this.slides[targetIndex]);
+    if(this._releaseCleanup)clearTimeout(this._releaseCleanup);
+    this._releaseCleanup=setTimeout(()=>{
+      this._releaseCleanup=null;
+      this.goto(targetIndex);
+    },440);
+  },
+  snapBack(){
+    const total=this.slides.length;
+    if(!total)return;
+    const wrap=this.els.slides;
+    wrap.classList.remove('dragging');
+    if(this.reducedMotion){this.goto(this.index);return;}
+    const current=this.slides[this.index];
+    const ease='transform 0.35s cubic-bezier(0.32,0.72,0.33,1),opacity 0.35s ease';
+    current.el.style.transition=ease;
+    current.el.style.transform='translateX(0)';
+    current.el.style.opacity='1';
+    current.el.style.visibility='visible';
+    if(this._releaseCleanup)clearTimeout(this._releaseCleanup);
+    this._releaseCleanup=setTimeout(()=>{
+      this._releaseCleanup=null;
+      this.goto(this.index);
+    },360);
+  },
+  clearDragState(){
+    const wrap=this.els.slides;
+    if(wrap)wrap.classList.remove('dragging');
+    if(this._releaseCleanup){clearTimeout(this._releaseCleanup);this._releaseCleanup=null;}
+    this.slides.forEach(s=>{
+      const el=s.el;
+      if(!el)return;
+      el.style.transition='';
+      el.style.transform='';
+      el.style.opacity='';
+      el.style.visibility='';
+    });
   },
   onKey(e){
     if(currentPage!=='home')return;
@@ -642,12 +806,9 @@ const heroCarousel={
     if(wlBtn){
       const s=this.slideFromEl(wlBtn);
       if(!s)return;
-      const inList=isInWatchlist(s.item.id);
+      const wasIn=isInWatchlist(s.item.id);
       toggleWatchlistItem({...s.item,type:s.type});
-      const now=isInWatchlist(s.item.id);
-      wlBtn.classList.toggle('in-list',now);
-      wlBtn.innerHTML=`<span class="wl-icon"></span> ${now?'In Watchlist':'Add to Watchlist'}`;
-      showToast(now?'Added to Watchlist':'Removed from Watchlist',now?'wl-added':'wl-removed');
+      showToast(wasIn?'Removed from Watchlist':'Added to Watchlist',wasIn?'wl-removed':'wl-added');
       return;
     }
     const playBtn=e.target.closest('.hero-play');
@@ -662,12 +823,13 @@ const heroCarousel={
     return idx>=0?this.slides[idx]:null;
   },
   async load(){
-    if(!this.els.carousel)return;
+    if(!this.els.carousel){publishHeroChosen([]);return;}
     let data;
     try{
       data=await Promise.all([getTrending('movie'),getTrending('tv')]);
     }catch(e){
       this.els.carousel.style.display='none';
+      publishHeroChosen([]);
       return;
     }
     const movieData=data[0],showData=data[1];
@@ -677,7 +839,8 @@ const heroCarousel={
     const len=Math.max(movies.length,shows.length);
     for(let i=0;i<len;i++){if(i<movies.length)inter.push({item:movies[i],type:'movie'});if(i<shows.length)inter.push({item:shows[i],type:'tv'});}
     const chosen=inter.slice(0,8);
-    if(!chosen.length){this.els.carousel.style.display='none';return;}
+    if(!chosen.length){this.els.carousel.style.display='none';publishHeroChosen([]);return;}
+    publishHeroChosen(chosen.map(x=>x.item.id));
     this.slides=chosen.map(({item,type})=>({
       item,type,
       title:item.title||item.name||'',
@@ -733,7 +896,7 @@ const heroCarousel={
         </div>
         <div class="hero-actions">
           <button type="button" class="featured-play hero-play"><i class="fa-solid fa-play"></i> Watch Now</button>
-          <button type="button" class="wl-btn hero-wl ${inList?'in-list':''}"><span class="wl-icon"></span> ${inList?'In Watchlist':'Add to Watchlist'}</button>
+          <button type="button" class="wl-btn hero-wl ${inList?'in-list':''}" data-wl-id="${s.item.id}"><span class="wl-icon"></span> ${inList?'In Watchlist':'Add to Watchlist'}</button>
         </div>
       </div>`;
   },
@@ -764,6 +927,7 @@ const heroCarousel={
   goto(i,dir){
     const total=this.slides.length;
     if(!total)return;
+    this.clearDragState();
     const prevIndex=this.index;
     i=((i%total)+total)%total;
     const changed=i!==prevIndex;
@@ -939,13 +1103,12 @@ async function renderFeatured(item){
     </div>`;
   el.querySelector('.featured-play').addEventListener('click',()=>selectItem(full,type,null));
   const wlBtn=el.querySelector('.featured-wl');
+  wlBtn.dataset.wlId=String(item.id);
   wlBtn.addEventListener('click',(e)=>{
     e.stopPropagation();
+    const wasIn=isInWatchlist(item.id);
     toggleWatchlistItem({...full,type});
-    const nowInList=wlBtn.classList.contains('in-list');
-    wlBtn.classList.toggle('in-list');
-    wlBtn.innerHTML=`<span class="wl-icon"></span> ${wlBtn.classList.contains('in-list')?'In Watchlist':'Watchlist'}`;
-    showToast(nowInList?'Removed from Watchlist':'Added to Watchlist',nowInList?'wl-removed':'wl-added');
+    showToast(wasIn?'Removed from Watchlist':'Added to Watchlist',wasIn?'wl-removed':'wl-added');
   });
 }
 function setSearchHash(q){try{history.replaceState(null,'','#search'+(q?'?q='+encodeURIComponent(q):''));}catch(e){}}
@@ -1157,14 +1320,12 @@ function makeCard(item,type,opts={}){
     <div class="card-info"><div class="card-title">${sanitize(title)}</div><div class="card-year">${year}</div></div>`;
   if(opts.showWl){
     const wlBtn=div.querySelector('.card-wl-btn');
+    wlBtn.dataset.wlId=String(item.id);
     wlBtn.addEventListener('click',(e)=>{
       e.stopPropagation();
+      const wasIn=isInWatchlist(item.id);
       toggleWatchlistItem({...item,type});
-      const nowInList=wlBtn.classList.contains('in-list');
-      wlBtn.classList.toggle('in-list');
-      wlBtn.innerHTML=wlBtn.classList.contains('in-list')?'&#9829;':'&#9825;';
-      wlBtn.title=wlBtn.classList.contains('in-list')?'Remove from watchlist':'Add to watchlist';
-      showToast(nowInList?'Removed from Watchlist':'Added to Watchlist', nowInList?'wl-removed':'wl-added');
+      showToast(wasIn?'Removed from Watchlist':'Added to Watchlist', wasIn?'wl-removed':'wl-added');
     });
   }
   if(opts.showDelete){
@@ -1228,7 +1389,7 @@ async function selectItem(item,type,cardEl){
           <span class="player-meta-item" id="playerMetaCert"></span>
         </div>
       </div>
-      <button class="wl-btn ${isInWatchlist(item.id)?'in-list':''}" onclick="toggleWatchlistFromPlayer('${type}')">
+      <button class="wl-btn ${isInWatchlist(item.id)?'in-list':''}" data-wl-id="${item.id}" onclick="toggleWatchlistFromPlayer('${type}')">
         <span class="wl-icon"></span> ${isInWatchlist(item.id)?'In Watchlist':'Add to Watchlist'}
       </button>
       <div class="player-actions">
@@ -1373,9 +1534,9 @@ function buildEmbedUrl(item,type,serverKey,forceTs){
 
 function toggleWatchlistFromPlayer(type){
   const item=state[type].selected;if(!item)return;
+  const wasIn=isInWatchlist(item.id);
   toggleWatchlistItem({...item,type});
-  const btn=document.querySelector('#page-player .wl-btn');
-  if(btn){const inList=isInWatchlist(item.id);btn.classList.toggle('in-list',inList);btn.innerHTML=`<span class="wl-icon"></span> ${inList?'In Watchlist':'Add to Watchlist'}`;}
+  showToast(wasIn?'Removed from Watchlist':'Added to Watchlist',wasIn?'wl-removed':'wl-added');
 }
 
 function getContinueList(){try{return JSON.parse(localStorage.getItem('screenify_continue')||'[]');}catch{return[];}}
@@ -1452,6 +1613,38 @@ function renderContinuePage(){
   list.forEach(stored=>listEl.appendChild(makeFeaturedCard(stored,'cw')));
 }
 
+// ============ WATCHLIST UI SYNC ============
+// Every watchlist toggle goes through toggleWatchlistItem (the single source
+// of truth). After the underlying list changes we refresh every visible button
+// that references the changed title, so the hero carousel, homepage/search
+// cards, search featured card and the player button all stay in sync.
+function setWlButtonState(btn,id){
+  if(!btn)return;
+  const inList=isInWatchlist(id);
+  if(btn.classList.contains('hero-wl')){
+    btn.classList.toggle('in-list',inList);
+    btn.innerHTML=`<span class="wl-icon"></span> ${inList?'In Watchlist':'Add to Watchlist'}`;
+  }else if(btn.classList.contains('featured-wl')){
+    btn.classList.toggle('in-list',inList);
+    btn.innerHTML=`<span class="wl-icon"></span> ${inList?'In Watchlist':'Watchlist'}`;
+  }else if(btn.classList.contains('card-wl-btn')){
+    btn.classList.toggle('in-list',inList);
+    btn.innerHTML=inList?'&#9829;':'&#9825;';
+    btn.title=inList?'Remove from watchlist':'Add to watchlist';
+    btn.setAttribute('aria-label',inList?'Remove from watchlist':'Add to watchlist');
+  }else if(btn.classList.contains('wl-btn')){
+    btn.classList.toggle('in-list',inList);
+    btn.innerHTML=`<span class="wl-icon"></span> ${inList?'In Watchlist':'Add to Watchlist'}`;
+  }
+}
+function syncWatchlistUI(id){
+  const key=id!=null?String(id):null;
+  document.querySelectorAll('[data-wl-id]').forEach(btn=>{
+    if(key!=null&&btn.dataset.wlId!==key)return;
+    setWlButtonState(btn,btn.dataset.wlId);
+  });
+}
+
 function getWatchlist(){try{return JSON.parse(localStorage.getItem('screenify_watchlist')||'[]');}catch{return[];}}
 function saveWatchlist(list){localStorage.setItem('screenify_watchlist',JSON.stringify(list));}
 function isInWatchlist(id){return getWatchlist().some(i=>i.id===id);}
@@ -1463,6 +1656,7 @@ function toggleWatchlistItem(item){
     list.unshift({id:item.id,type:item.type,title:item.title||item.name,year:(item.release_date||item.first_air_date||item.year||'').slice(0,4),poster:item.poster_path||item.poster||null,rating:item.vote_average||item.rating||null});
   }
   saveWatchlist(list);
+  syncWatchlistUI(item.id);
   if(currentPage==='watchlist')renderWatchlistPage();
 }
 function makeFeaturedCard(stored,mode){
@@ -1545,6 +1739,7 @@ function makeFeaturedCard(stored,mode){
 }
 function removeFromWatchlist(id){
   saveWatchlist(getWatchlist().filter(i=>i.id!==id));
+  syncWatchlistUI(id);
   if(currentPage==='watchlist')renderWatchlistPage();
 }
 function renderWatchlistPage(){
@@ -1653,6 +1848,12 @@ function setupKeyboardShortcuts(){
   }
   setupKeyboardShortcuts();
   handleBackToTop();
+  // ============ PWA: SERVICE WORKER ============
+  if('serviceWorker' in navigator){
+    window.addEventListener('load',()=>{
+      navigator.serviceWorker.register('sw.js').catch(err=>console.warn('[ystream] service worker registration failed',err));
+    });
+  }
   document.querySelectorAll('.nav-item').forEach(n=>{
     n.setAttribute('tabindex','0');n.setAttribute('role','button');
     n.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();n.click();}});
