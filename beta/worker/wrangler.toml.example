@@ -1,0 +1,33 @@
+# yStream BETA proxy — wrangler configuration example.
+# Copy to wrangler.toml and run `npx wrangler deploy` (or `wrangler publish`).
+#
+# NOTE: this is a NEW, dedicated Worker that ONLY serves the /beta routes.
+# It never touches the production TMDB Worker (screenify-worker…).
+
+name = "screenify-beta-proxy"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+
+# Env vars (all optional):
+#  DEFAULT_PROVIDER : "videasy" | "vidking"   (used when a request omits ?provider=)
+#  REFERER          : upstream Referer to send, e.g. "https://player.videasy.net/"
+#                     (leave unset to mirror the site's no-referrer policy)
+#  STATIC_ORIGIN    : only needed if you deploy with wildcard routes
+#                     (e.g. "yassinabdelaziz.github.io") so the Worker can pass
+#                     through /beta/player/ and /beta/proxy/ module files.
+[vars]
+DEFAULT_PROVIDER = "videasy"
+# REFERER = "https://player.videasy.net/"
+# STATIC_ORIGIN = "yassinabdelaziz.github.io"
+
+# ---- Routes on the custom domain (cloudflare-proxied) ---------------------
+# Use EXACT paths so the /beta/player/ and /beta/proxy/ folders (client
+# modules) stay served by GitHub Pages and are NOT swallowed by the Worker.
+# If YSTREAM-DOMAIN is not proxied through Cloudflare, deploy on a workers.dev
+# host instead: the beta UI will detect it, report "proxied but NOT same-origin"
+# and fall back to the direct embed.
+routes = [
+  { pattern = "ystream.dpdns.org/beta/healthz", zone_id = "YOUR_ZONE_ID" },
+  { pattern = "ystream.dpdns.org/beta/player",  zone_id = "YOUR_ZONE_ID" },
+  { pattern = "ystream.dpdns.org/beta/proxy",   zone_id = "YOUR_ZONE_ID" }
+]

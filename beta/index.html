@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="description" content="yStream BETA — experimental same-origin proxy player (Videasy / VidKing)." />
+<meta name="theme-color" content="#0f0f0f" />
+<meta name="referrer" content="no-referrer" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' https: data: blob:; media-src 'self' https: blob:; connect-src 'self' https:; frame-src 'self' https: blob:; font-src 'self' https: data:; object-src 'none'; base-uri 'self';" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E%F0%9F%A7%AA%3C/text%3E%3C/svg%3E" />
+<title>yStream BETA — Proxy Player Experiment</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" />
+<link rel="stylesheet" href="styles.css?v=1" />
+</head>
+<body>
+
+<header class="beta-topbar">
+  <div class="beta-topbar-inner">
+    <a class="beta-logo" href="/" title="Back to production yStream"><em>y</em>Stream</a>
+    <span class="beta-badge">BETA</span>
+    <span class="beta-topbar-sub">same-origin proxy player experiment</span>
+    <a class="beta-main-link" href="/" title="Open production site"><i class="fa-solid fa-arrow-up-right-from-square"></i> Main site</a>
+  </div>
+</header>
+
+<main class="beta-main">
+
+  <section class="beta-hero">
+    <h1 class="beta-hero-title">Beta proxy player</h1>
+    <p class="beta-hero-sub">
+      Loads the Videasy / VidKing embed through a YStream-origin proxy and tests how much control we gain
+      (same-origin DOM access, popup interception, ad filtering). Nothing here touches the production player.
+    </p>
+    <div class="beta-mode-badge" id="betaModeBadge">
+      <span class="beta-mode-dot"></span>
+      <span id="betaModeText">Checking proxy…</span>
+    </div>
+  </section>
+
+  <section class="beta-card beta-title-form">
+    <div class="beta-card-head">
+      <span class="beta-card-title"><i class="fa-solid fa-film"></i> Title to test</span>
+      <span class="beta-card-hint">or use <code>?id=&amp;type=movie|tv</code> URL params</span>
+    </div>
+    <div class="beta-form-row">
+      <select id="betaType" class="beta-input beta-select">
+        <option value="movie">Movie</option>
+        <option value="tv">TV Show</option>
+      </select>
+      <input type="number" id="betaId" class="beta-input" placeholder="TMDB id (e.g. 603)" inputmode="numeric" />
+      <input type="number" id="betaSeason" class="beta-input beta-input-sm" placeholder="S" value="1" inputmode="numeric" />
+      <input type="number" id="betaEpisode" class="beta-input beta-input-sm" placeholder="E" value="1" inputmode="numeric" />
+      <button type="button" id="betaLoadBtn" class="beta-btn beta-btn-accent"><i class="fa-solid fa-play"></i> Load</button>
+    </div>
+    <div class="beta-form-row beta-examples">
+      <span class="beta-examples-label">Examples:</span>
+      <button type="button" class="beta-example" data-id="603" data-type="movie">The Matrix (603)</button>
+      <button type="button" class="beta-example" data-id="1396" data-type="tv">Breaking Bad (1396)</button>
+      <button type="button" class="beta-example" data-id="27205" data-type="movie">Inception (27205)</button>
+    </div>
+  </section>
+
+  <section class="beta-card beta-player-card">
+    <div class="beta-card-head">
+      <span class="beta-card-title" id="betaPlayerTitle"><i class="fa-solid fa-circle-play"></i> Player</span>
+      <span class="beta-card-hint" id="betaPlayerSubtitle">Pick a server and press Load.</span>
+    </div>
+    <div class="beta-server-pills" id="betaServerPills">
+      <button type="button" class="beta-server-pill active" data-server="videasy">
+        <i class="fa-solid fa-circle-play"></i> Server 1 — Videasy <span class="beta-srv-badge">★</span>
+      </button>
+      <button type="button" class="beta-server-pill" data-server="vidking">
+        <i class="fa-solid fa-server"></i> Server 2 — VidKing
+      </button>
+    </div>
+
+    <div class="beta-player-wrap" id="betaPlayerWrap">
+      <iframe id="betaPlayerFrame" title="Beta proxy player" class="beta-player-frame"
+        allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
+        allowfullscreen webkitallowfullscreen mozallowfullscreen referrerpolicy="no-referrer"></iframe>
+      <div class="beta-player-overlay" id="betaLoadingOverlay">
+        <div class="beta-spinner"></div>
+        <div class="beta-loading-text" id="betaLoadingText">Contacting proxy…</div>
+      </div>
+      <div class="beta-player-overlay beta-error-overlay" id="betaErrorOverlay" style="display:none;">
+        <div class="beta-error-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+        <div class="beta-error-title" id="betaErrorTitle">Player could not load</div>
+        <div class="beta-error-msg" id="betaErrorMsg"></div>
+        <div class="beta-error-actions">
+          <button type="button" class="beta-btn" id="betaRetryProxyBtn"><i class="fa-solid fa-rotate-right"></i> Retry proxy</button>
+          <button type="button" class="beta-btn beta-btn-accent" id="betaFallbackBtn"><i class="fa-solid fa-link"></i> Load direct embed (fallback)</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="beta-player-controls">
+      <span class="beta-controls-label"><i class="fa-solid fa-sliders"></i> Player control probes</span>
+      <button type="button" class="beta-btn beta-btn-sm" data-probe="play"><i class="fa-solid fa-play"></i> Play</button>
+      <button type="button" class="beta-btn beta-btn-sm" data-probe="pause"><i class="fa-solid fa-pause"></i> Pause</button>
+      <button type="button" class="beta-btn beta-btn-sm" data-probe="seek"><i class="fa-solid fa-forward"></i> +15s</button>
+      <button type="button" class="beta-btn beta-btn-sm" data-probe="volume"><i class="fa-solid fa-volume-high"></i> +10%</button>
+      <button type="button" class="beta-btn beta-btn-sm" data-probe="mute"><i class="fa-solid fa-volume-xmark"></i> Mute</button>
+      <button type="button" class="beta-btn beta-btn-sm" data-probe="fullscreen"><i class="fa-solid fa-expand"></i> Fullscreen</button>
+      <button type="button" class="beta-btn beta-btn-sm" data-probe="pip"><i class="fa-solid fa-film"></i> PiP</button>
+      <button type="button" class="beta-btn beta-btn-sm" data-probe="popup-test"><i class="fa-solid fa-window-restore"></i> Test popup stub</button>
+    </div>
+  </section>
+
+  <section class="beta-card" id="betaDiagnosticsCard">
+    <div class="beta-card-head">
+      <span class="beta-card-title"><i class="fa-solid fa-stethoscope"></i> Diagnostics</span>
+      <label class="beta-toggle-label">
+        <input type="checkbox" id="betaDiagnosticsToggle" />
+        <span class="beta-toggle-slider"></span>
+        <span>Show</span>
+      </label>
+    </div>
+    <div id="betaDiagnosticsPanel" class="beta-diagnostics" style="display:none;"></div>
+    <div class="beta-diagnostics-empty" id="betaDiagnosticsEmpty" style="display:none;">
+      Load a title first, then open the diagnostics panel to see the experiment state.
+    </div>
+  </section>
+
+  <section class="beta-card beta-notes">
+    <div class="beta-card-head">
+      <span class="beta-card-title"><i class="fa-solid fa-flask"></i> What this beta tests</span>
+    </div>
+    <ul class="beta-note-list">
+      <li><b>Same-origin DOM access</b> — can the beta page read the player document without a <code>SecurityError</code>?</li>
+      <li><b>Popup interception</b> — can <code>window.open()</code>, <code>target="_blank"</code> and programmatic navigation be stubbed so no advertising tab opens?</li>
+      <li><b>Ad filtering</b> — modular, conservative DOM rules under <code>/beta/ad-filter</code>.</li>
+      <li><b>Playback integrity</b> — play / pause / seek / volume / fullscreen / PiP / keyboard and progress must keep working.</li>
+      <li>If the proxy is rejected or impossible, the beta falls back to the normal direct embed and explains why.</li>
+    </ul>
+  </section>
+
+</main>
+
+<footer class="beta-footer">
+  <span>yStream BETA — experimental mirror. Kept strictly under <code>/beta</code>. Production site is untouched.</span>
+</footer>
+
+<div class="beta-toast-container" id="betaToastContainer"></div>
+
+<script src="app.js?v=1"></script>
+<script src="player/beta-player.js?v=1"></script>
+<script src="proxy/proxy-client.js?v=1"></script>
+<script src="diagnostics/diagnostics.js?v=1"></script>
+</body>
+</html>
