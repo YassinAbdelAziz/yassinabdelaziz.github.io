@@ -133,19 +133,19 @@
     function patchMediaSrc(proto, name) {
       try {
         var real = Object.getOwnPropertyDescriptor(proto, name) || { configurable: true };
-        var cache = real.get;
+        if (typeof real.set !== 'function') return;
         var setter = function (v) {
           if (shouldProxy(v)) {
             var rw = toProxyUrl(v);
             logReq(name + '-src', v, rw, true);
-            return setter.call(this, rw);
+            return real.set.call(this, rw);
           }
-          return setter.call(this, v);
+          return real.set.call(this, v);
         };
         Object.defineProperty(proto, name, {
           configurable: true,
           enumerable: true,
-          get: cache,
+          get: real.get,
           set: setter
         });
       } catch (e) { /* unsupported */ }

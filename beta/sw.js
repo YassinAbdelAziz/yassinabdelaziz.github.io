@@ -9,7 +9,7 @@
 //  - never cache media or player HTML (they vary with every request).
 //  - the /beta shell + injected modules use stale-while-revalidate so a deploy
 //    reaches browsers without a manual version bump.
-const CACHE = 'ystream-beta-v2';
+const CACHE = 'ystream-beta-v3';
 const PROXY = '/beta/proxy';
 const PLAYER = '/beta/player';
 const HEALTH = '/beta/healthz';
