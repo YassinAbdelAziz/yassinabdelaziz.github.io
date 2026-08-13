@@ -21,8 +21,10 @@ class PlayerJsBridge(
     private val requestedEpisode: Int?
 ) {
 
+    /** Invoked on the calling thread when actual playback starts (play/playing event). */
+    var onPlaybackStarted: (() -> Unit)? = null
+
     private val allowedOrigins = setOf(
-        "https://www.vidking.net",
         "https://player.videasy.net",
         "https://player.videasy.to"
     )
@@ -36,6 +38,10 @@ class PlayerJsBridge(
             val data = root.optJSONObject("data") ?: return
 
             val event = data.optString("event")
+            if (event == "play" || event == "playing") {
+                onPlaybackStarted?.invoke()
+            }
+
             val qualifies = event == "pause" || event == "ended" || event == "seeked" ||
                     (event == "timeupdate" && floor(data.optDouble("currentTime", 0.0)) % 10 == 0.0)
             if (!qualifies) return

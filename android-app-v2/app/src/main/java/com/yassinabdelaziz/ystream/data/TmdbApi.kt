@@ -1,9 +1,12 @@
 package com.yassinabdelaziz.ystream.data
 
 import com.yassinabdelaziz.ystream.BuildConfig
+import com.yassinabdelaziz.ystream.data.model.ContentRatingsDto
 import com.yassinabdelaziz.ystream.data.model.CreditsDto
 import com.yassinabdelaziz.ystream.data.model.DetailsDto
+import com.yassinabdelaziz.ystream.data.model.GenreListDto
 import com.yassinabdelaziz.ystream.data.model.MediaListResponse
+import com.yassinabdelaziz.ystream.data.model.ReleaseDatesDto
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -58,6 +61,29 @@ interface TmdbApi {
         @Path("mediaType") mediaType: String,
         @Path("id") id: Long
     ): CreditsDto
+
+    @GET("genre/{mediaType}/list")
+    suspend fun genres(
+        @Path("mediaType") mediaType: String
+    ): GenreListDto
+
+    @GET("discover/{mediaType}")
+    suspend fun discover(
+        @Path("mediaType") mediaType: String,
+        @Query("with_genres") genreId: Int,
+        @Query("sort_by") sortBy: String = "popularity.desc",
+        @Query("page") page: Int = 1
+    ): MediaListResponse
+
+    @GET("movie/{id}/release_dates")
+    suspend fun movieReleaseDates(
+        @Path("id") id: Long
+    ): ReleaseDatesDto
+
+    @GET("tv/{id}/content_ratings")
+    suspend fun tvContentRatings(
+        @Path("id") id: Long
+    ): ContentRatingsDto
 
     companion object {
         fun create(): TmdbApi {

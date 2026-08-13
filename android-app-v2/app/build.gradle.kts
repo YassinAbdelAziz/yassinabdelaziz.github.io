@@ -15,10 +15,12 @@ android {
         minSdk = 23
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         buildConfigField("String", "SITE_URL", "\"https://ystream.dpdns.org/\"")
         buildConfigField("String", "API_BASE", "\"https://screenify-worker.yassinmovies.workers.dev/api/tmdb\"")
+        buildConfigField("String", "GITHUB_OWNER", "\"yassinabdelaziz\"")
+        buildConfigField("String", "GITHUB_REPO", "\"yassinabdelaziz.github.io\"")
     }
 
     signingConfigs {

@@ -1,5 +1,11 @@
 package com.yassinabdelaziz.ystream.ui.navigation
 
+import android.net.Uri
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,6 +47,7 @@ import com.yassinabdelaziz.ystream.data.model.MediaType
 import com.yassinabdelaziz.ystream.ui.screens.BrowseScreen
 import com.yassinabdelaziz.ystream.ui.screens.ContinueScreen
 import com.yassinabdelaziz.ystream.ui.screens.DetailScreen
+import com.yassinabdelaziz.ystream.ui.screens.GenreScreen
 import com.yassinabdelaziz.ystream.ui.screens.HomeScreen
 import com.yassinabdelaziz.ystream.ui.screens.PlayerScreen
 import com.yassinabdelaziz.ystream.ui.screens.SearchScreen
@@ -50,6 +57,7 @@ import com.yassinabdelaziz.ystream.ui.theme.AccentRed
 import com.yassinabdelaziz.ystream.ui.theme.TextSecondary
 import com.yassinabdelaziz.ystream.ui.viewmodel.BrowseViewModel
 import com.yassinabdelaziz.ystream.ui.viewmodel.DetailViewModel
+import com.yassinabdelaziz.ystream.ui.viewmodel.GenreViewModel
 import com.yassinabdelaziz.ystream.ui.viewmodel.HomeViewModel
 import com.yassinabdelaziz.ystream.ui.viewmodel.LibraryViewModel
 import com.yassinabdelaziz.ystream.ui.viewmodel.PlayerViewModel
@@ -110,7 +118,11 @@ fun YStreamNav() {
             startDestination = "home",
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding),
+            enterTransition = { fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 8 } },
+            exitTransition = { fadeOut(tween(160)) },
+            popEnterTransition = { fadeIn(tween(220)) + slideInHorizontally(tween(260)) { -it / 8 } },
+            popExitTransition = { fadeOut(tween(160)) + slideOutHorizontally(tween(220)) { it / 8 } }
         ) {
             composable("home") {
                 val vm: HomeViewModel = viewModel(factory = HomeViewModel.factory(appRepo()))
@@ -129,9 +141,36 @@ fun YStreamNav() {
                 val vm: BrowseViewModel = viewModel(factory = BrowseViewModel.factory(appRepo(), MediaType.TV))
                 BrowseScreen(vm) { type, id -> navController.navigate(detailRoute(type, id)) }
             }
+            composable(
+                route = "genre/{type}/{genreId}/{name}",
+                arguments = listOf(
+                    navArgument("type") { type = NavType.StringType },
+                    navArgument("genreId") { type = NavType.IntType },
+                    navArgument("name") { type = NavType.StringType }
+                )
+            ) { entry ->
+                val type = MediaType.valueOf(entry.arguments!!.getString("type")!!.uppercase())
+                val genreId = entry.arguments!!.getInt("genreId")
+                val name = Uri.decode(entry.arguments!!.getString("name") ?: "")
+                val vm: GenreViewModel = viewModel(factory = GenreViewModel.factory(appRepo(), type, genreId))
+                GenreScreen(
+                    vm = vm,
+                    type = type,
+                    genreName = name,
+                    onOpenDetail = { t, id -> navController.navigate(detailRoute(t, id)) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
             composable("search") {
                 val vm: SearchViewModel = viewModel(factory = SearchViewModel.factory(appRepo()))
-                SearchScreen(vm) { type, id -> navController.navigate(detailRoute(type, id)) }
+                SearchScreen(
+                    vm = vm,
+                    onOpenDetail = { type, id -> navController.navigate(detailRoute(type, id)) },
+                    onOpenCategory = { type -> navController.navigate(type.tmdb) },
+                    onOpenGenre = { type, id, name ->
+                        navController.navigate("genre/${type.tmdb}/$id/${Uri.encode(name)}")
+                    }
+                )
             }
             composable("watchlist") {
                 val vm: LibraryViewModel = viewModel(factory = LibraryViewModel.factory(appRepo()))

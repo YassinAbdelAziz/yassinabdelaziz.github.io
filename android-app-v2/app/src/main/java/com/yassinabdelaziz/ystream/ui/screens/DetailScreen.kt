@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -50,10 +52,10 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.yassinabdelaziz.ystream.data.model.MediaListItem
 import com.yassinabdelaziz.ystream.data.model.MediaType
+import com.yassinabdelaziz.ystream.ui.components.AgeBadge
 import com.yassinabdelaziz.ystream.ui.components.ErrorState
 import com.yassinabdelaziz.ystream.ui.components.LoadingState
 import com.yassinabdelaziz.ystream.ui.components.MediaCard
-import com.yassinabdelaziz.ystream.ui.components.RatingBadge
 import com.yassinabdelaziz.ystream.ui.theme.AccentRed
 import com.yassinabdelaziz.ystream.ui.theme.Background
 import com.yassinabdelaziz.ystream.ui.theme.RatingGold
@@ -72,7 +74,6 @@ fun DetailScreen(
     onOpenDetail: (MediaType, Long) -> Unit
 ) {
     val ui by vm.ui.collectAsState()
-    val server by vm.server.collectAsState()
     val continueList by vm.continueWatching.collectAsState()
     val watchlist by vm.watchlist.collectAsState()
 
@@ -103,7 +104,6 @@ fun DetailScreen(
                     media = media,
                     bundle = bundle,
                     isTv = isTv,
-                    server = server,
                     inWatchlist = watchlist.any { it.id == media.id && it.type == media.type },
                     hasResume = resume != null && resume.positionMs > 0,
                     selectedSeason = selectedSeason,
@@ -111,7 +111,6 @@ fun DetailScreen(
                     onSeasonChange = { selectedSeason = it; selectedEpisode = 1 },
                     onEpisodeChange = { selectedEpisode = it },
                     onToggleWatchlist = vm::toggleWatchlist,
-                    onServerChange = vm::setServer,
                     onPlay = {
                         if (isTv) onOpenPlayer(media, selectedSeason, selectedEpisode)
                         else onOpenPlayer(media, null, null)
@@ -161,12 +160,12 @@ private fun BackdropHeader(media: MediaListItem, onBack: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DetailContent(
     media: MediaListItem,
     bundle: YStreamRepositoryDetailsBundle,
     isTv: Boolean,
-    server: String,
     inWatchlist: Boolean,
     hasResume: Boolean,
     selectedSeason: Int,
@@ -174,7 +173,6 @@ private fun DetailContent(
     onSeasonChange: (Int) -> Unit,
     onEpisodeChange: (Int) -> Unit,
     onToggleWatchlist: () -> Unit,
-    onServerChange: (String) -> Unit,
     onPlay: () -> Unit,
     onOpenDetail: (MediaType, Long) -> Unit
 ) {
@@ -206,26 +204,41 @@ private fun DetailContent(
                     modifier = Modifier.padding(top = 6.dp)
                 ) {
                     media.year?.let { Text(it, color = TextSecondary, style = MaterialTheme.typography.bodyMedium) }
-                    if (bundle.details.status != null) {
-                        Text("·", color = TextSecondary)
-                        Text(bundle.details.status, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                    bundle.ageRating?.let { rating ->
+                        AgeBadge(rating.numericLabel())
+                    }
+                    bundle.details.status?.let { status ->
+                        if (!isTv && status.isNotBlank()) {
+                            Text(status, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                 }
-                bundle.details.genres?.take(3)?.let { genres ->
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                bundle.ageRating?.reason?.let { reason ->
+                    Text(
+                        text = reason,
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 6.dp)
-                    ) {
-                        genres.forEach { genre ->
-                            Text(
-                                text = genre.name ?: "",
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(SurfaceVariantDark)
-                                    .padding(horizontal = 6.dp, vertical = 3.dp)
-                            )
+                    )
+                }
+                bundle.details.genres?.let { genres ->
+                    if (genres.isNotEmpty()) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(top = 6.dp)
+                        ) {
+                            genres.forEach { genre ->
+                                Text(
+                                    text = genre.name ?: "",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(SurfaceVariantDark)
+                                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -268,15 +281,6 @@ private fun DetailContent(
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-
-        Text("Server", style = MaterialTheme.typography.titleSmall, color = TextSecondary)
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ServerChip("videasy", "Videasy", server == "videasy", onServerChange)
-            ServerChip("vidking", "Vidking", server == "vidking", onServerChange)
-        }
-
         if (isTv) {
             Spacer(Modifier.height(16.dp))
             Text("Season", style = MaterialTheme.typography.titleSmall, color = TextSecondary)
@@ -297,18 +301,17 @@ private fun DetailContent(
                     )
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            Text("Episode", style = MaterialTheme.typography.titleSmall, color = TextSecondary)
             Spacer(Modifier.height(8.dp))
-            val episodeCount = bundle.details.seasons
-                ?.firstOrNull { it.seasonNumber == selectedSeason }
-                ?.episodeCount?.takeIf { it > 0 } ?: 24
+            val episodes = bundle.details.seasons
+                ?.find { it.seasonNumber == selectedSeason }
+                ?.let { (1..it.episodeCount).toList() }
+                ?: (1..10).toList()
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items((1..episodeCount).toList()) { ep ->
+                items(episodes, key = { it }) { ep ->
                     FilterChip(
                         selected = ep == selectedEpisode,
                         onClick = { onEpisodeChange(ep) },
-                        label = { Text("$ep") },
+                        label = { Text("E$ep") },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = AccentRed,
                             selectedLabelColor = Color.White
@@ -365,13 +368,14 @@ private fun DetailContent(
                             text = person.name ?: "",
                             color = MaterialTheme.colorScheme.onBackground,
                             style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                         Text(
                             text = person.character ?: "",
                             color = TextSecondary,
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.bodySmall,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
@@ -382,6 +386,12 @@ private fun DetailContent(
 
         if (bundle.moreLikeThis.isNotEmpty()) {
             Spacer(Modifier.height(20.dp))
+            Text(
+                text = if (media.title.isNotBlank()) "More Like \"${media.title}\"" else "More Like This",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(bundle.moreLikeThis, key = { "${it.type.tmdb}:${it.id}" }) { item ->
                     MediaCard(item, onClick = { onOpenDetail(item.type, item.id) })
@@ -390,24 +400,6 @@ private fun DetailContent(
             Spacer(Modifier.height(24.dp))
         }
     }
-}
-
-@Composable
-private fun ServerChip(
-    value: String,
-    label: String,
-    selected: Boolean,
-    onSelect: (String) -> Unit
-) {
-    FilterChip(
-        selected = selected,
-        onClick = { onSelect(value) },
-        label = { Text(label) },
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = AccentRed,
-            selectedLabelColor = Color.White
-        )
-    )
 }
 
 // Type alias so DetailContent can reference the bundle without leaking the data package name.

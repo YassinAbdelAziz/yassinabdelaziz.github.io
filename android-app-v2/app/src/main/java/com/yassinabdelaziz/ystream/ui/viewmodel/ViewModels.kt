@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.yassinabdelaziz.ystream.YStreamApp
 import com.yassinabdelaziz.ystream.data.YStreamRepository
 import com.yassinabdelaziz.ystream.data.model.ContinueEntry
+import com.yassinabdelaziz.ystream.data.model.GenreDto
 import com.yassinabdelaziz.ystream.data.model.MediaListItem
 import com.yassinabdelaziz.ystream.data.model.MediaType
 import com.yassinabdelaziz.ystream.web.PlayerJsBridge
@@ -32,9 +33,19 @@ inline fun <reified VM : ViewModel> appRepositoryFactory(
 
 class HomeViewModel(private val repo: YStreamRepository) : ViewModel() {
 
+    /** A single slide of the homepage hero carousel. */
+    data class CarouselSlide(
+        val item: MediaListItem,
+        val type: MediaType,
+        val genres: List<String> = emptyList(),
+        val runtime: Int? = null,
+        val seasons: Int? = null
+    )
+
     data class UiState(
         val movies: List<MediaListItem> = emptyList(),
         val tv: List<MediaListItem> = emptyList(),
+        val carousel: List<CarouselSlide> = emptyList(),
         val loading: Boolean = true,
         val error: String? = null
     )
@@ -43,6 +54,9 @@ class HomeViewModel(private val repo: YStreamRepository) : ViewModel() {
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
     val continueWatching: StateFlow<List<ContinueEntry>> = repo.continueWatching
+
+    private val _slideExtras = MutableStateFlow<Map<String, YStreamRepository.SlideExtra>>(emptyMap())
+    val slideExtras: StateFlow<Map<String, YStreamRepository.SlideExtra>> = _slideExtras.asStateFlow()
 
     init {
         load()
@@ -54,7 +68,16 @@ class HomeViewModel(private val repo: YStreamRepository) : ViewModel() {
             try {
                 val movies = repo.trending(MediaType.MOVIE)
                 val tv = repo.trending(MediaType.TV)
-                _ui.update { it.copy(movies = movies, tv = tv, loading = false) }
+                val slides = buildCarousel(movies, tv)
+                val slideIds = slides.map { it.item.id }.toSet()
+                _ui.update {
+                    it.copy(
+                        movies = movies.filterNot { x -> x.id in slideIds }.take(14),
+                        tv = tv.filterNot { x -> x.id in slideIds }.take(14),
+                        carousel = slides,
+                        loading = false
+                    )
+                }
             } catch (e: Exception) {
                 _ui.update {
                     it.copy(loading = false, error = "Couldn't load the feed. Check your connection and try again.")
@@ -62,6 +85,36 @@ class HomeViewModel(private val repo: YStreamRepository) : ViewModel() {
             }
         }
     }
+
+    /**
+     * Builds the hero carousel exactly like the website: up to 6 movies and 6 TV
+     * shows that have backdrop art and an overview, interleaved, capped at 8 slides.
+     */
+    private fun buildCarousel(movies: List<MediaListItem>, tv: List<MediaListItem>): List<CarouselSlide> {
+        val movieCandidates = movies.filter { it.backdropPath != null && !it.overview.isNullOrBlank() }.take(6)
+        val tvCandidates = tv.filter { it.backdropPath != null && !it.overview.isNullOrBlank() }.take(6)
+        val inter = mutableListOf<CarouselSlide>()
+        val len = maxOf(movieCandidates.size, tvCandidates.size)
+        for (i in 0 until len) {
+            if (i < movieCandidates.size) inter += CarouselSlide(movieCandidates[i], MediaType.MOVIE)
+            if (i < tvCandidates.size) inter += CarouselSlide(tvCandidates[i], MediaType.TV)
+        }
+        return inter.take(8)
+    }
+
+    /** Lazily fills runtime/seasons/genres for the currently visible carousel slide. */
+    fun loadSlideExtras(item: MediaListItem, type: MediaType) {
+        val key = "${type.tmdb}:${item.id}"
+        if (_slideExtras.value.containsKey(key)) return
+        viewModelScope.launch {
+            val extra = repo.slideExtras(type, item.id)
+            _slideExtras.update { it + (key to extra) }
+        }
+    }
+
+    fun isInWatchlist(item: MediaListItem): Boolean = repo.isInWatchlist(item)
+
+    fun toggleWatchlist(item: MediaListItem) = repo.toggleWatchlist(item)
 
     companion object {
         fun factory(repo: YStreamRepository) = appRepositoryFactory { HomeViewModel(it) }
@@ -133,6 +186,73 @@ class BrowseViewModel(
     }
 }
 
+// ---------------------------------------------------------------- Genre
+
+class GenreViewModel(
+    private val repo: YStreamRepository,
+    private val type: MediaType,
+    private val genreId: Int
+) : ViewModel() {
+
+    data class UiState(
+        val items: List<MediaListItem> = emptyList(),
+        val loading: Boolean = true,
+        val loadingMore: Boolean = false,
+        val end: Boolean = false,
+        val error: String? = null,
+        val sort: String = "popularity.desc"
+    )
+
+    private val _ui = MutableStateFlow(UiState())
+    val ui: StateFlow<UiState> = _ui.asStateFlow()
+
+    private var page = 0
+
+    init {
+        load()
+    }
+
+    fun load(sort: String = _ui.value.sort) {
+        viewModelScope.launch {
+            _ui.update { it.copy(loading = true, error = null, sort = sort) }
+            try {
+                page = 1
+                val items = repo.discover(type, genreId, page, sort)
+                _ui.update { it.copy(items = items, loading = false, end = items.isEmpty()) }
+            } catch (e: Exception) {
+                _ui.update { it.copy(loading = false, error = "Couldn't load titles. Try again.") }
+            }
+        }
+    }
+
+    fun loadMore() {
+        val state = _ui.value
+        if (state.loadingMore || state.end || state.loading) return
+        viewModelScope.launch {
+            _ui.update { it.copy(loadingMore = true) }
+            try {
+                page += 1
+                val more = repo.discover(type, genreId, page, state.sort)
+                val merged = state.items + more
+                _ui.update {
+                    it.copy(
+                        items = merged,
+                        loadingMore = false,
+                        end = more.isEmpty() || (state.items.isEmpty() && more.isEmpty())
+                    )
+                }
+            } catch (e: Exception) {
+                _ui.update { it.copy(loadingMore = false) }
+            }
+        }
+    }
+
+    companion object {
+        fun factory(repo: YStreamRepository, type: MediaType, genreId: Int) =
+            appRepositoryFactory { GenreViewModel(it, type, genreId) }
+    }
+}
+
 // ---------------------------------------------------------------- Search
 
 class SearchViewModel(private val repo: YStreamRepository) : ViewModel() {
@@ -142,7 +262,10 @@ class SearchViewModel(private val repo: YStreamRepository) : ViewModel() {
         val results: List<MediaListItem> = emptyList(),
         val loading: Boolean = false,
         val searched: Boolean = false,
-        val error: String? = null
+        val error: String? = null,
+        val movieGenres: List<GenreDto> = emptyList(),
+        val tvGenres: List<GenreDto> = emptyList(),
+        val genresLoading: Boolean = true
     )
 
     private val _ui = MutableStateFlow(UiState())
@@ -151,6 +274,23 @@ class SearchViewModel(private val repo: YStreamRepository) : ViewModel() {
     val history: StateFlow<List<String>> = repo.history
 
     private var searchJob: Job? = null
+
+    init {
+        loadGenres()
+    }
+
+    private fun loadGenres() {
+        viewModelScope.launch {
+            _ui.update { it.copy(genresLoading = true) }
+            try {
+                val movieGenres = repo.genres(MediaType.MOVIE)
+                val tvGenres = repo.genres(MediaType.TV)
+                _ui.update { it.copy(movieGenres = movieGenres, tvGenres = tvGenres, genresLoading = false) }
+            } catch (_: Exception) {
+                _ui.update { it.copy(genresLoading = false) }
+            }
+        }
+    }
 
     fun onQueryChange(value: String) {
         _ui.update { it.copy(query = value, error = null) }
@@ -240,7 +380,6 @@ class DetailViewModel(
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
-    val server: StateFlow<String> = repo.activeServer
     val continueWatching: StateFlow<List<ContinueEntry>> = repo.continueWatching
     val watchlist: StateFlow<List<MediaListItem>> = repo.watchlist
 
@@ -259,8 +398,6 @@ class DetailViewModel(
             }
         }
     }
-
-    fun setServer(server: String) = repo.setActiveServer(server)
 
     fun toggleWatchlist() {
         _ui.value.media?.let { repo.toggleWatchlist(it) }
@@ -294,8 +431,6 @@ class PlayerViewModel(
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
-    val server: StateFlow<String> = repo.activeServer
-
     init {
         viewModelScope.launch {
             try {
@@ -312,17 +447,12 @@ class PlayerViewModel(
         }
     }
 
-    fun setServer(server: String) {
-        repo.setActiveServer(server)
-        rebuildEmbed()
-    }
-
     private fun rebuildEmbed() {
         val resume = repo.continueWatching.value.firstOrNull { entry ->
             entry.key() == "${type.tmdb}:$mediaId" &&
                     (type == MediaType.MOVIE || (entry.season == season && entry.episode == episode))
         }
-        _embedUrl.value = repo.embedUrl(type, mediaId, repo.activeServer.value, season, episode, resume)
+        _embedUrl.value = repo.embedUrl(type, mediaId, season, episode, resume)
     }
 
     companion object {

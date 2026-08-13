@@ -21,10 +21,12 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -82,6 +84,46 @@ fun RatingBadge(score: Double?, modifier: Modifier = Modifier) {
             color = Color.White,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+fun AgeBadge(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        color = MaterialTheme.colorScheme.onBackground,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        modifier = modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xB3000000))
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+    )
+}
+
+@Composable
+fun GenreTile(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(12.dp))
+            .background(SurfaceVariantDark)
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        contentAlignment = Alignment.BottomStart
+    ) {
+        Text(
+            text = label,
+            color = Color.White,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -171,44 +213,77 @@ fun PosterGrid(
 fun ContinueCard(
     entry: ContinueEntry,
     modifier: Modifier = Modifier,
-    onClick: (ContinueEntry) -> Unit
+    onClick: (ContinueEntry) -> Unit,
+    onRemove: ((ContinueEntry) -> Unit)? = null
 ) {
-    Column(modifier = modifier.width(260.dp).clickable { onClick(entry) }) {
+    Column(modifier = modifier.width(128.dp).clickable { onClick(entry) }) {
         Box {
             AsyncImage(
-                model = entry.backdropPath?.let { "https://image.tmdb.org/t/p/w500$it" },
+                model = entry.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
                 contentDescription = entry.title,
                 placeholder = Placeholder,
                 error = Placeholder,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(140.dp)
+                    .aspectRatio(2f / 3f)
                     .clip(RoundedCornerShape(10.dp))
                     .background(SurfaceDark)
             )
-            Box(
+            Column(
                 Modifier
-                    .align(Alignment.Center)
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color(0x99000000))
-            )
-        }
-        val progress = if (entry.durationMs > 0) entry.positionMs.toFloat() / entry.durationMs.toFloat() else 0f
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(3.dp)
-                .padding(top = 8.dp)
-                .background(SurfaceVariantDark)
-        ) {
-            Box(
-                Modifier
-                    .fillMaxWidth(progress.coerceIn(0f, 1f))
-                    .height(3.dp)
-                    .background(AccentRed)
-            )
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+            ) {
+                val resumeText = buildString {
+                    if (entry.season != null && entry.episode != null) append("S${entry.season} E${entry.episode}")
+                }
+                if (resumeText.isNotEmpty()) {
+                    Text(
+                        text = resumeText,
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(AccentRed.copy(alpha = 0.88f))
+                            .padding(vertical = 2.dp)
+                    )
+                }
+                val progress = if (entry.durationMs > 0) entry.positionMs.toFloat() / entry.durationMs.toFloat() else 0f
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .background(Color(0x1AFFFFFF))
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(progress.coerceIn(0f, 1f))
+                            .height(3.dp)
+                            .background(AccentRed)
+                    )
+                }
+            }
+            if (onRemove != null) {
+                IconButton(
+                    onClick = { onRemove(entry) },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color(0xB3000000))
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Remove",
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(6.dp))
         Text(
@@ -218,12 +293,8 @@ fun ContinueCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        val sub = buildString {
-            if (entry.season != null && entry.episode != null) append("S${entry.season} E${entry.episode} · ")
-            append(formatPosition(entry.positionMs))
-        }
         Text(
-            text = sub,
+            text = formatPosition(entry.positionMs),
             color = TextSecondary,
             style = MaterialTheme.typography.bodySmall
         )

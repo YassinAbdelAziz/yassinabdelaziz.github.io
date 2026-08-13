@@ -46,16 +46,18 @@ class LocalStore(context: Context) {
 
     fun setHistory(list: List<String>) = writeJson(KEY_HISTORY, list)
 
-    fun getActiveServer(): String = prefs.getString(KEY_SERVER, "videasy") ?: "videasy"
+    /** Latest update version the user dismissed, so we never nag again for it. */
+    fun getDismissedUpdateVersion(): String =
+        prefs.getString(KEY_DISMISSED_UPDATE, "") ?: ""
 
-    fun setActiveServer(server: String) {
-        prefs.edit().putString(KEY_SERVER, server).apply()
+    fun setDismissedUpdateVersion(version: String) {
+        prefs.edit().putString(KEY_DISMISSED_UPDATE, version).apply()
     }
 
     private companion object {
         const val KEY_WATCHLIST = "watchlist"
         const val KEY_CONTINUE = "continue_watching"
         const val KEY_HISTORY = "search_history"
-        const val KEY_SERVER = "active_server"
+        const val KEY_DISMISSED_UPDATE = "dismissed_update_version"
     }
 }

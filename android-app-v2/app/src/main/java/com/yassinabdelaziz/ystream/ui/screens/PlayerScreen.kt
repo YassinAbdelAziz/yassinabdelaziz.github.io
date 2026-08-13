@@ -2,9 +2,14 @@ package com.yassinabdelaziz.ystream.ui.screens
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.PictureInPictureParams
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -14,9 +19,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,7 +29,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -49,7 +51,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.yassinabdelaziz.ystream.BuildConfig
 import com.yassinabdelaziz.ystream.adblock.AdBlocker
 import com.yassinabdelaziz.ystream.ui.theme.AccentRed
-import com.yassinabdelaziz.ystream.ui.theme.TextSecondary
 import com.yassinabdelaziz.ystream.ui.viewmodel.PlayerViewModel
 import com.yassinabdelaziz.ystream.web.PlayerShell
 
@@ -63,12 +64,14 @@ fun PlayerScreen(
     val view = LocalView.current
     val embedUrl by vm.embedUrl.collectAsState()
     val bridge by vm.bridge.collectAsState()
-    val server by vm.server.collectAsState()
 
+    val activity = context as? Activity
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
     val webView = webViewRef.value
     var showSpinner by remember { mutableStateOf(true) }
     var loadedUrl by remember { mutableStateOf<String?>(null) }
+    var playbackStarted by remember { mutableStateOf(false) }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     // Immersive fullscreen: hide system bars while watching, restore on exit.
     DisposableEffect(Unit) {
@@ -78,13 +81,28 @@ fun PlayerScreen(
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.systemBars())
-        onDispose { controller.show(WindowInsetsCompat.Type.systemBars()) }
+        onDispose {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
+    // Automatically rotate to landscape fullscreen once playback actually starts.
+    LaunchedEffect(playbackStarted) {
+        if (playbackStarted) {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
     }
 
     BackHandler(onBack = onBack)
 
     LaunchedEffect(bridge, webView) {
-        bridge?.let { webView?.addJavascriptInterface(it, "AndroidBridge") }
+        bridge?.let {
+            webView?.addJavascriptInterface(it, "AndroidBridge")
+            it.onPlaybackStarted = {
+                mainHandler.post { playbackStarted = true }
+            }
+        }
     }
 
     LaunchedEffect(embedUrl, webView) {
@@ -120,6 +138,24 @@ fun PlayerScreen(
                             view: WebView, isDialog: Boolean, isUserGesture: Boolean,
                             resultMsg: android.os.Message
                         ): Boolean = false
+
+                        // Videasy's own fullscreen button arrives here. We can't remove
+                        // the control from inside the iframe, so treat it as PiP: hand the
+                        // whole activity over to picture-in-picture and playback continues
+                        // in the PiP window. The user returns to the player (and from there
+                        // to the content page) when PiP is closed.
+                        override fun onShowCustomView(
+                            view: View?,
+                            customViewCallback: WebChromeClient.CustomViewCallback
+                        ) {
+                            val act = activity
+                            if (act != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                customViewCallback.onCustomViewHidden()
+                                act.enterPictureInPictureMode(PictureInPictureParams.Builder().build())
+                            } else {
+                                customViewCallback.onCustomViewHidden()
+                            }
+                        }
                     }
 
                     webViewClient = object : WebViewClient() {
@@ -176,36 +212,6 @@ fun PlayerScreen(
                 tint = Color.White
             )
         }
-
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 20.dp, end = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            ServerPill("Videasy", server == "videasy") { vm.setServer("videasy") }
-            ServerPill("Vidking", server == "vidking") { vm.setServer("vidking") }
-        }
-    }
-}
-
-@Composable
-private fun ServerPill(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    androidx.compose.material3.TextButton(
-        onClick = onClick,
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(if (selected) AccentRed else Color(0x66000000))
-    ) {
-        Text(
-            text = label,
-            color = if (selected) Color.White else TextSecondary,
-            style = androidx.compose.material3.MaterialTheme.typography.labelLarge
-        )
     }
 }
 
