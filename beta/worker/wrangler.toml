@@ -14,7 +14,10 @@ account_id = "dc0e6dca317c52a75e449a8bbdcdc0b2"
 [vars]
 DEFAULT_PROVIDER = "videasy"
 STATIC_ORIGIN = "yassinabdelaziz.github.io"
-# REFERER = "https://player.videasy.net/"
+# Upstream Referer the Worker sends when relaying proxy/player requests. The
+# provider's API (api.speedracelight.com) hard-blocks foreign origins, so this
+# must be the provider's real player origin.
+REFERER = "https://player.videasy.to/"
 
 # Cloudflare route patterns consider the ENTIRE URL including the query
 # string, so every pattern MUST end with "*" (the beta embed URLs always carry

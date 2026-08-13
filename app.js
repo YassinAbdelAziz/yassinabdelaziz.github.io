@@ -205,27 +205,6 @@ function setupSearchEvents(){
   });
 }
 
-// ============ SHORTCUT MODAL ============
-function showShortcutModal(){
-  const existing=document.getElementById('shortcutModal');
-  if(existing)existing.remove();
-  const backdrop=document.createElement('div');
-  backdrop.className='shortcut-modal-backdrop';
-  backdrop.id='shortcutModal';
-  backdrop.innerHTML=`
-    <div class="shortcut-modal">
-      <h3>Keyboard Shortcuts</h3>
-      <div class="shortcut-row"><span>Toggle Sidebar</span><div class="shortcut-keys"><span class="shortcut-key">M</span></div></div>
-      <div class="shortcut-row"><span>Fullscreen Player</span><div class="shortcut-keys"><span class="shortcut-key">F</span></div></div>
-      <div class="shortcut-row"><span>Go Back</span><div class="shortcut-keys"><span class="shortcut-key">Esc</span></div></div>
-      <div class="shortcut-row"><span>Carousel</span><div class="shortcut-keys"><span class="shortcut-key">←</span><span class="shortcut-key">→</span></div></div>
-      <button class="shortcut-modal-close">Close</button>
-    </div>`;
-  backdrop.querySelector('.shortcut-modal-close').addEventListener('click',()=>backdrop.remove());
-  backdrop.addEventListener('click',e=>{if(e.target===backdrop)backdrop.remove();});
-  document.body.appendChild(backdrop);
-}
-
 // ============ TOAST SYSTEM ============
 function showToast(message, type='') {
   const container = document.getElementById('toastContainer');

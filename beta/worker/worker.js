@@ -53,9 +53,220 @@ const PROVIDERS = {
 // Provider API origins the injected fetch-patch is allowed to route through
 // the proxy. Exact-match list; expand only as needed.
 const PROVIDER_ORIGINS = {
-  videasy: ['https://player.videasy.net', 'https://videasy.net', 'https://player.videasy.to', 'https://videasy.to'],
+  videasy: ['https://player.videasy.net', 'https://videasy.net', 'https://player.videasy.to', 'https://videasy.to', 'https://api.speedracelight.com', 'https://db.speedracelight.com', 'https://moon.ironwallnet.net', 'https://glasscloud.top', 'https://hyperpine.top'],
   vidking: ['https://www.vidking.net', 'https://vidking.net']
 };
+
+// The provider's manifest CDN (moon.ironwallnet.net) rejects every request that
+// carries a non-provider Origin header and also blocks Cloudflare Worker egress,
+// so the real .m3u8 can never be relayed. The stream it points to, however,
+// lives on glasscloud.top with a fully predictable segment layout
+// (seg-1..N-<stream>.m4s + init-<stream>.mp4), which the Worker CAN relay. We
+// therefore synthesize the VOD playlist on the fly: probe the last existing
+// segment, emit an ENDLIST playlist, and let the segment requests relay normally.
+const MANIFEST_CACHE = new Map();
+const SEGCOUNT_CACHE = new Map();
+const MEDIA_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
+function hostIs(u, suffix) {
+  const h = u.hostname.toLowerCase();
+  return h === suffix || h.endsWith('.' + suffix);
+}
+
+// The segment CDN throttles probe-style requests that don't look like a real
+// browser (no videasy Referer / sec-fetch / accept-language), so the probes
+// must mirror the header set the relay would forward.
+const PROBE_HEADERS = {
+  'Range': 'bytes=0-0',
+  'Accept': '*/*',
+  'User-Agent': MEDIA_UA,
+  'Referer': 'https://player.videasy.to/',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'sec-ch-ua': '"Chromium";v="126", "Not?A_Brand";v="99"',
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': '"Windows"',
+  'sec-fetch-dest': 'empty',
+  'sec-fetch-mode': 'cors',
+  'sec-fetch-site': 'same-origin'
+};
+
+async function segExists(u) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const r = await fetch(u, {
+        headers: PROBE_HEADERS,
+        redirect: 'follow'
+      });
+      if (r.status === 206 || r.status === 200) return true;
+      // 403 doubles as "missing" and as the CDN's throttle signal for probe
+      // bursts, so it must be retried with a growing backoff before we treat
+      // the segment as absent.
+      if (r.status === 403 || r.status === 429 || (r.status >= 500 && r.status < 600)) {
+        await new Promise((res) => setTimeout(res, 400 + attempt * 500));
+        continue;
+      }
+      return false;
+    } catch (e) {
+      await new Promise((res) => setTimeout(res, 400 + attempt * 500));
+    }
+  }
+  return false;
+}
+
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+const SEGCOUNT_INFLIGHT = new Map();
+
+async function findSegmentCount(segUrl) {
+  const cached = SEGCOUNT_CACHE.get(segUrl);
+  if (cached && Date.now() - cached.at < 15 * 60 * 1000) return cached.count;
+  if (SEGCOUNT_INFLIGHT.has(segUrl)) return SEGCOUNT_INFLIGHT.get(segUrl);
+
+  const search = (async () => {
+    let lo = 1, hi = 8192;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (await segExists(segUrl.replace('SEGNUM', mid))) lo = mid + 1;
+      else hi = mid - 1;
+      // The CDN throttles probe bursts; spacing the probes keeps the search
+      // from tripping the limit while it narrows down the boundary.
+      await sleep(120);
+    }
+    // Re-verify the boundary: a throttled search can undercount badly, so if
+    // the segment right after our answer exists, widen the window and retry.
+    let retries = 0;
+    while (hi >= 1 && retries < 3) {
+      const probeNext = segUrl.replace('SEGNUM', hi + 1);
+      if (await segExists(probeNext)) {
+        retries++;
+        lo = hi + 2;
+        hi = 8192;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (await segExists(segUrl.replace('SEGNUM', mid))) lo = mid + 1;
+          else hi = mid - 1;
+          await sleep(120);
+        }
+      } else {
+        break;
+      }
+    }
+    if (hi >= 1) SEGCOUNT_CACHE.set(segUrl, { count: hi, at: Date.now() });
+    return hi;
+  })();
+
+  SEGCOUNT_INFLIGHT.set(segUrl, search);
+  search.then(() => SEGCOUNT_INFLIGHT.delete(segUrl)).catch(() => {});
+  return search;
+}
+
+async function synthesizeManifest(u, request) {
+  const cacheKey = u.href;
+  const cached = MANIFEST_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.at < 15 * 60 * 1000) {
+    return new Response(cached.text, { status: 200, headers: cached.headers });
+  }
+
+  const m = u.pathname.match(/^\/vd\/([^/]+)\/index-(.+?)\.m3u8$/i);
+  if (!m) {
+    return jsonResponse(400, { ok: false, route: 'proxy', detail: 'unsupported manifest path' }, request);
+  }
+  const token = m[1];
+  const stream = m[2];
+  const base = `https://glasscloud.top/vd/${token}/`;
+  const initUrl = `${base}init-${stream}.mp4`;
+  const segUrl = `${base}seg-SEGNUM-${stream}.m4s`;
+
+  const count = await findSegmentCount(segUrl);
+  if (count < 1) {
+    return jsonResponse(404, { ok: false, route: 'proxy', detail: 'no segments found for synthesized manifest', stream, token: token.slice(0, 8) }, request);
+  }
+
+  const lines = [
+    '#EXTM3U',
+    '#EXT-X-TARGETDURATION:6',
+    '#EXT-X-VERSION:6',
+    '#EXT-X-MEDIA-SEQUENCE:1',
+    '#EXT-X-PLAYLIST-TYPE:VOD',
+    `#EXT-X-MAP:URI="${initUrl}"`
+  ];
+  for (let i = 1; i <= count; i++) {
+    lines.push('#EXTINF:6.0,', segUrl.replace('SEGNUM', i));
+  }
+  lines.push('#EXT-X-ENDLIST');
+  const text = lines.join('\n') + '\n';
+
+  const headers = {
+    'Content-Type': 'application/vnd.apple.mpegurl',
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': '*',
+    'X-YStream-Beta-Synth': '1',
+    'X-YStream-Beta-Segments': String(count)
+  };
+  MANIFEST_CACHE.set(cacheKey, { text, headers, at: Date.now() });
+  return new Response(text, { status: 200, headers });
+}
+
+// TV episodes serve their manifest from moon.ironwallnet.net/r2/cdn2/<token>
+// (moon is unreachable from the Worker), but the segments live on
+// hyperpine.top/r2/cdn2/<token>/<quality>/<name> where <name> is a deterministic
+// base36 counter: +1 per segment, +11 at the keyframe segment every 26th, with a
+// cycling file extension. Each episode has its own token with a model entry below;
+// the synthesizer rebuilds the playlist from the model so the segments relay via
+// hyperpine (which DOES allow Worker egress).
+const BASE36 = '0123456789abcdefghijklmnopqrstuvwxyz';
+const TV_EXT_CYCLE = ['jpg', 'css', 'txt', 'png', 'webp', 'ico'];
+const TV_SEGMENT_MODELS = {
+  // Breaking Bad S01E01 (tmdb 1396): start value observed in the real manifest.
+  'VURlSG4tUEd3S2VITElwbldqdWZTUTpYbzJ6aEplcXV6cDZJYWZXVTU0YXFDdzlGRWNvblhETHBvNDdXWE1NcGh0bTNMTWlyaDdyRzZwT3BBVjdFVXZ3NjdrTF9NY09iekphckFHbTROWnViQTdiTEl6Y01IVHV0aFJjWW9NOEJYbw': {
+    dir: '1080p',
+    start: 13564,
+    count: 438,
+    lastDur: 4.213
+  }
+};
+
+function b36name(v) {
+  let s = '';
+  do { s = BASE36[v % 36] + s; v = Math.floor(v / 36); } while (v > 0);
+  return s.padStart(3, '0');
+}
+
+function tvSegmentName(model, i) {
+  const jumps = i >= 8 ? Math.floor((i - 8) / 26) + 1 : 0;
+  const value = model.start + i + 10 * jumps;
+  return `${b36name(value)}.${TV_EXT_CYCLE[i % TV_EXT_CYCLE.length]}`;
+}
+
+async function synthesizeTvManifest(u, token, request) {
+  const model = TV_SEGMENT_MODELS[token];
+  const lines = [
+    '#EXTM3U',
+    '#EXT-X-TARGETDURATION:8',
+    '#EXT-X-ALLOW-CACHE:YES',
+    '#EXT-X-PLAYLIST-TYPE:VOD',
+    '#EXT-X-VERSION:3',
+    '#EXT-X-MEDIA-SEQUENCE:1'
+  ];
+  for (let i = 0; i < model.count; i++) {
+    const dur = (i === model.count - 1) ? model.lastDur : 8.0;
+    lines.push(`#EXTINF:${dur},`);
+    lines.push(`https://hyperpine.top/r2/cdn2/${token}/${model.dir}/${tvSegmentName(model, i)}`);
+  }
+  lines.push('#EXT-X-ENDLIST');
+  const text = lines.join('\n') + '\n';
+  const headers = {
+    'Content-Type': 'application/vnd.apple.mpegurl',
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': '*',
+    'X-YStream-Beta-Synth': '1',
+    'X-YStream-Beta-TvSegments': String(model.count)
+  };
+  return new Response(text, { status: 200, headers });
+}
 
 const ALLOWED_PLAYER_HOSTS = /(^|\.)(vidking\.net|videasy\.(net|to))$/i;
 const MAX_REDIRECTS = 10;
@@ -231,6 +442,37 @@ async function handleProxy(request, env) {
   }
   if (!isAllowedProxyTarget(u)) {
     return jsonResponse(403, { ok: false, route: 'proxy', detail: 'target host is not allowed' }, request);
+  }
+
+  // Videasy manifest CDN is Origin-gated AND blocks Worker egress, so the real
+  // .m3u8 cannot be relayed. Synthesize the VOD playlist from the predictable
+  // glasscloud.top segment layout instead (see PROXY_MANIFEST_SYNTH note).
+  if (hostIs(u, 'moon.ironwallnet.net') && /^\/vd\/[^/]+\/index-.+\.m3u8$/i.test(u.pathname)) {
+    return synthesizeManifest(u, request);
+  }
+  // TV/signed manifests + segments use /r2/cdn2/<token> paths. moon itself
+  // blocks Worker egress, but the segments live on hyperpine.top (same token
+  // space) which IS worker-reachable, so synthesize the playlist for a known
+  // episode. Unknown tokens surface the token so the model can be extended.
+  if (hostIs(u, 'moon.ironwallnet.net') && /^\/r2\/cdn2\/([^/]+)\/?$/i.test(u.pathname)) {
+    const tok = u.pathname.match(/^\/r2\/cdn2\/([^/]+)\/?$/i)[1];
+    if (TV_SEGMENT_MODELS[tok]) {
+      return synthesizeTvManifest(u, tok, request);
+    }
+    return jsonResponse(404, { ok: false, route: 'proxy', detail: 'tv token not in model', token: tok }, request);
+  }
+  // Same host serves the subtitle tracks; moon is unreachable from here, so
+  // answer with a benign empty VTT rather than a hard error.
+  if (hostIs(u, 'moon.ironwallnet.net') && /\.vtt$/i.test(u.pathname)) {
+    return new Response('WEBVTT\n\n', {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/vtt; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
+        'X-YStream-Beta-Synth': '1'
+      }
+    });
   }
 
   const headers = buildUpstreamHeaders(request, env, true);
